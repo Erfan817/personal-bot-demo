@@ -11,8 +11,9 @@ import now from "./now.mjs";
 import historySearch from "./history_search.mjs";
 import webSearch from "./web_search.mjs";
 import webFetch from "./web_fetch.mjs";
+import remindMe from "./remind_me.mjs";
 
-const REGISTRY = [calc, now, historySearch, webSearch, webFetch];
+const REGISTRY = [calc, now, historySearch, webSearch, webFetch, remindMe];
 
 /** 交给框架的工具数组（AgentTool 格式） */
 export const agentTools = REGISTRY;
