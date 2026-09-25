@@ -1,0 +1,19 @@
+# ═══════════════════════════════════════════════════════════
+# 心跳检查 —— service（单次执行）
+# ═══════════════════════════════════════════════════════════
+# 由 erifane-healthcheck.timer 触发。
+#
+# 注意：这里【不用】写 User=，所以以 root 运行 ——
+#       因为它需要 systemctl restart erifane-bot 的权限。
+# ═══════════════════════════════════════════════════════════
+
+[Unit]
+Description=Erifane Bot heartbeat check
+After=erifane-bot.service
+
+[Service]
+Type=oneshot
+ExecStart=/home/azureuser/erifane-bot/scripts/healthcheck.sh
+
+# 单次执行不该跑太久
+TimeoutStartSec=60

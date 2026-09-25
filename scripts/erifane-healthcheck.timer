@@ -1,0 +1,30 @@
+# ═══════════════════════════════════════════════════════════
+# 心跳检查 —— timer（每 5 分钟）
+# ═══════════════════════════════════════════════════════════
+# 安装：
+#   sudo cp scripts/erifane-healthcheck.* /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now erifane-healthcheck.timer
+#
+# 查看：
+#   systemctl list-timers erifane-healthcheck.timer
+#   journalctl -u erifane-healthcheck -n 20
+# ═══════════════════════════════════════════════════════════
+
+[Unit]
+Description=Run Erifane Bot heartbeat check every 5 minutes
+
+[Timer]
+# 开机 2 分钟后再开始（给服务自己启动的时间，避免误判）
+OnBootSec=2min
+
+# 之后每 5 分钟一次（相对于上次执行完成，不会堆积）
+OnUnitActiveSec=5min
+
+# 允许一点抖动，减少和其他定时任务的碰撞
+AccuracySec=30s
+
+Unit=erifane-healthcheck.service
+
+[Install]
+WantedBy=timers.target

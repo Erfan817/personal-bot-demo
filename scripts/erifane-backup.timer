@@ -1,0 +1,29 @@
+# ═══════════════════════════════════════════════════════════
+# 备份 —— timer（每天 04:00）
+# ═══════════════════════════════════════════════════════════
+# 安装：
+#   sudo cp scripts/erifane-backup.* /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now erifane-backup.timer
+#
+# ★ Persistent=true 是 cron 做不到的：
+#   如果 04:00 时机器是关着的，开机后会自动补跑一次。
+#   cron 错过的任务就是错过了。
+# ═══════════════════════════════════════════════════════════
+
+[Unit]
+Description=Run Erifane Bot backup daily at 04:00
+
+[Timer]
+OnCalendar=*-*-* 04:00:00
+
+# 关机期间错过的备份，开机后补跑
+Persistent=true
+
+# 允许一点抖动
+AccuracySec=5min
+
+Unit=erifane-backup.service
+
+[Install]
+WantedBy=timers.target

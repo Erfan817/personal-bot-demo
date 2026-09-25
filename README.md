@@ -6,19 +6,59 @@
 > 不是"部署了一个开源 Agent"，而是**自己写的一套 Agent 网关**。
 > 分层设计、能力白名单、协议无关的渠道适配、幂等与限频、心跳自愈运维——每一层都能说清楚为什么在那儿。
 
+### 这是什么，不是什么
+
+**是**：一份**"每一步都能说清为什么这么做"**的工程 demo。
+重点不在功能多，而在**每个设计决策的理由**，以及**踩过的坑和怎么定位的**。
+
+**不是**：生产级系统。下面「已知局限」一节把短板都列出来了，包括没有做的部分。
+
 ---
 
-## 能力
+## 能力（并标清哪部分是自己写的）
 
-| 能力 | 说明 |
-|---|---|
-| **多端派活** | 飞书长连接，手机 / 电脑 / 平板天然同步，同一个会话上下文连续 |
-| **长期记忆** | SQLite + FTS5 全文检索。跨会话记得住，**且能主动去翻旧账** |
-| **定时主动推送** | 内置 cron，早上 8 点自己推早报——不等你问 |
-| **联网** | 搜索 + 抓网页，会判断信源可靠度、标注出处 |
-| **可换大脑** | 44 个内置 provider（含 DeepSeek / Kimi / GLM / 通义等国产），改 `.env` 一行 |
-| **24/7 可靠** | systemd 常驻 + 崩溃重启 + **心跳自愈**（连"假活"也能发现）+ 每日备份 |
-| **安全** | SSH 密钥登录、准入白名单、限频、幂等、工具白名单闸门 |
+**这个项目依赖了 4 个第三方包**，所以有必要说清楚能力边界 ——
+**"能连 44 个模型的 provider 集合"是框架给的，不是这个项目实现的。**
+
+| 能力 | 说明 | 谁实现的 |
+|---|---|---|
+| **多端派活** | 飞书长连接，手机 / 电脑 / 平板天然同步，会话上下文连续 | 长连接是飞书 SDK 提供；**渠道适配、3 秒约束下的异步化是自己写的** |
+| **长期记忆** | SQLite + FTS5 全文检索，跨会话记得住，**能主动去翻旧账** | **自己写的**（含中文分词处理、索引同步） |
+| **定时主动推送** | 按 cron 自己推报告，不等你问 | **cron 解析器、调度器、`deliver` 事件都是自己写的** |
+| **联网** | 搜索 + 抓网页，会判断信源可靠度、标注出处 | **工具是自己写的**；搜索走 DuckDuckGo HTML 或 Brave API |
+| **可换大脑** | 换模型只改 `.env` 一行 | ⚠️ **provider 集合（44 个）来自 `pi-ai`，不是本项目实现的**。本项目做的是"把它接进分层结构" |
+| **Agent 循环** | 模型→要工具→执行→回灌→再问 | ⚠️ 循环本身由 `pi-agent-core` 提供。**第 1 步里有一份手写的 60 行版本**（`agent.mjs`）用来对照 |
+| **24/7 可靠** | systemd 常驻 + 崩溃重启 + **心跳自愈**（连"假活"也能发现）+ 每日备份 | **运维脚本是自己写的** |
+| **安全** | SSH 密钥登录、准入白名单、限频、幂等、工具白名单闸门 | **桥接层和闸门是自己写的**；`beforeToolCall` 钩子是框架提供的挂载点 |
+
+> **一句话**：框架提供了「怎么调模型」和「怎么转循环」；
+> **这个项目做的是把它们包进一个有门禁、有记忆、有调度、能被运维的系统里。**
+
+---
+
+## 测试
+
+```bash
+npm test        # node --test tests/（Node 内置测试框架，零依赖）
+npm run check   # 对所有 .mjs 跑 node --check
+```
+
+**为什么这个项目特别需要测试**：踩坑章节里那七八条，
+（`*/` 提前闭合注释、中文引号截断字符串、FTS rowid 不对齐、验证页伪装成"0 结果"）
+**全都是"肉眼查不出来、只有跑起来才暴露"的类型。** 它们正好是单测最该固化的东西。
+
+覆盖范围：
+
+| 测试文件 | 覆盖 | 备注 |
+|---|---|---|
+| `cron.test.mjs` | 解析 / 匹配 / 非法输入 | 含「日 vs 周」那个经典陷阱 |
+| `gateway.test.mjs` | 准入 / 幂等 / 限频 / **顺序** | 验证「陌生人不消耗你的令牌」 |
+| `outbound.test.mjs` | 长回复切分 | 不把句子劈开、内容不丢 |
+| `web.test.mjs` | HTML→文本 / 验证页识别 / URL 拆包 | 含「区分没有数据 vs 拿不到数据」 |
+| `memory.test.mjs` | 存取 / 索引同步 / 会话隔离 | **含"已知局限"的固化断言** |
+
+> 其中 `memory.test.mjs` 有一组**故意断言"检索不到"**的用例 ——
+> 把已知失效场景写成测试，缺陷就变成了**有意的设计取舍**，而不是运行时的惊喜。
 
 ---
 
@@ -104,6 +144,38 @@ beforeToolCall: async ({ toolCall }) => {
 **上下文里只放最近 N 条**（保证对话连贯），**更早的内容交给 `history_search` 工具自己去翻**。
 
 实测：把 `HISTORY_LIMIT=2`（装不下答案）时，它**没有说"我不知道"，而是自己去检索了历史**。
+
+#### ⚠️ 但要说清它「不准」的那一面
+
+上面那个实测验证的是**"它会去检索"**，**没有验证"检索得准"**。这两件事不一样，必须分开讲：
+
+**这个记忆层是纯字面检索（FTS5 trigram），没有语义召回。** 也就是：
+
+| 场景 | 结果 |
+|---|---|
+| 你说过「橘猫」，再问「橘猫」 | ✅ 能召回 |
+| 你说过「橘猫」，再问「宠物」 | ❌ **召回不了** |
+| 你说过「整理会议纪要」，再问「总结记录」 | ❌ **召回不了** |
+| 查询词不足 3 字（如「牛奶」） | ⚠️ 降到 `LIKE` 全表扫描，能兜住但数据量大时会慢 |
+
+**换句话说：它记住的是你说过的「字面词」，不是「意思」。**
+同义改写、口语换词、跨语言表达，都会漏。
+
+**为什么接受这个取舍**：
+语义召回需要 embedding 模型 + 向量库，成本和复杂度都要上一个台阶，
+而 `flash` 模型的上下文窗口有 **100 万 token** ——
+大多数"日常回忆"场景，靠最近 N 条 + 字面检索已经够用。
+
+**这些边界不是猜的**，`tests/memory.test.mjs` 里有一组**故意断言"检索不到"**的用例把它们钉住了：
+
+```javascript
+// 把已知失效场景写成断言，缺陷就变成【有意的设计取舍】
+assert.equal(searchHistory("宠物", 5).length, 0,
+  "「宠物」召不回「橘猫」—— 这是字面检索的固有局限，不是 bug");
+```
+
+**要升级的话**：给 `messages` 加一列 embedding，检索时做 BM25 + 向量的混合排序。
+`better-sqlite3` 可以加载向量扩展，或者换成 LanceDB。**那是下一步的事，不是没意识到。**
 
 ### 4. 入站闸门的顺序有讲究：准入 → 幂等 → 限频
 
@@ -209,6 +281,24 @@ systemd 的 `Restart=always` **只能处理进程退出**。进程活着但事�
 
 而且飞书要求**先有客户端连上，才能保存这个选项**——顺序反了会卡住。
 
+### ⑧ 知道一个坑 ≠ 不会再踩它
+
+写 `scripts/check-syntax.mjs` 的时候（**这个脚本专门用来抓语法错误**），
+我在它的文件头注释里写了这句：
+
+```javascript
+ *     · */ 在块注释里提前闭合注释     ← 这就是坑本身
+```
+
+**脚本自己语法错误了。** 正是它要检测的那个 bug。
+
+改成 `*\/` 之后才通过。
+
+**教训**：
+> **把"我记住了"换成"工具会拦住我"。**
+> 我在这份 README 里写了这条坑，然后十分钟后又踩了一次 ——
+> 所以真正的解法不是记性更好，而是**每次改完都跑 `npm run check`**。
+
 ---
 
 ## 技术栈
@@ -259,14 +349,58 @@ sudo systemctl restart erifane-bot    # 重启
 journalctl -u erifane-bot -n 100 --no-pager   # 看最近 100 行
 ```
 
-**部署在 `/etc/systemd/system/erifane-bot.service`**，用普通用户运行（不用 root）。
+**部署在 `/etc/systemd/system/` 下，共三个单元**：
 
-**cron**（root）：
+| 单元 | 作用 | 身份 |
+|---|---|---|
+| `erifane-bot.service` | 主服务，常驻 | `azureuser`（不用 root） |
+| `erifane-healthcheck.timer` | 每 5 分钟心跳检查 | root（需要重启服务的权限） |
+| `erifane-backup.timer` | 每天 04:00 备份 | `azureuser` |
 
-```cron
-*/5 * * * * /home/azureuser/erifane-bot/scripts/healthcheck.sh
-0 4 * * *   /usr/bin/node /home/azureuser/erifane-bot/scripts/backup.mjs
+```bash
+sudo cp scripts/erifane-*.service scripts/erifane-*.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now erifane-bot erifane-healthcheck.timer erifane-backup.timer
 ```
+
+**为什么不直接用 cron 跑心跳和备份**：
+
+| | cron | **systemd timer** |
+|---|---|---|
+| 脚本自己挂了 | ❌ 没人知道 | ✅ `systemctl list-timers` 可见 |
+| 执行记录 | ❌ 靠邮件/无 | ✅ 进 journal，`journalctl -u` 可查 |
+| 关机错过的任务 | ❌ 就错过了 | ✅ `Persistent=true` 开机补跑（备份用了这个） |
+| 失败后续动作 | ❌ 没有 | ✅ 可挂 `OnFailure=` |
+
+**看定时器状态**：
+
+```bash
+systemctl list-timers 'erifane-*'
+journalctl -u erifane-healthcheck -n 20 --no-pager
+```
+
+**心跳自愈的告警阈值**（`scripts/healthcheck.sh`）：
+
+```
+第 1 次异常  -> 重启服务
+第 2 次异常  -> 重启服务
+第 3 次异常  -> 【停止自动重启】+ 写 data/ALERT + 打日志
+               （避免重启风暴掩盖真正原因）
+心跳恢复     -> 计数自动复位、告警自动清除
+```
+
+**告警文件长这样**（`~/erifane-bot/data/ALERT`）：
+
+```
+═══ Erifane Bot 告警 ═══
+时间        : 2026-09-25 14:03:12
+原因        : 心跳已 412s 未更新（阈值 300s）
+连续失败次数: 3
+处置        : 已【停止自动重启】，等待人工介入
+```
+
+**还没做的**：这是**本机告警**，不是**外部告警**。真要"出事时人不在电脑前也能知道"，
+得把 `ALERT` 推到飞书/邮件/webhook —— 那是待办里的「外部告警通道」。
 
 **改完代码的部署流程**：
 
@@ -283,47 +417,63 @@ ssh server 'journalctl -u erifane-bot -f' # 看结果
 ```
 erifane-bot/
 ├── package.json
-├── .env.example              配置模板
-├── agent.mjs                 第 1 步的单文件版本（教学对照用）
-├── experiments/              框架 API 探路脚本
+├── .env.example                    配置模板
+├── agent.mjs                       第 1 步的单文件版本（教学对照用）
+├── experiments/                    框架 API 探路脚本
+│   ├── pi-minimal.mjs
+│   └── cron-selftest.mjs
 ├── scripts/
-│   ├── erifane-bot.service   systemd 单元
-│   ├── healthcheck.sh        心跳自愈
-│   └── backup.mjs            数据库 + 配置备份
+│   ├── erifane-bot.service         主服务
+│   ├── erifane-healthcheck.service 心跳检查（单次）
+│   ├── erifane-healthcheck.timer   心跳检查（每 5 分钟）
+│   ├── erifane-backup.service      备份（单次）
+│   ├── erifane-backup.timer        备份（每天 04:00）
+│   ├── healthcheck.sh              心跳自愈 + 告警阈值
+│   ├── backup.mjs                  数据库 + 配置备份
+│   └── check-syntax.mjs            批量 node --check
+├── tests/                          node:test，零依赖
+│   ├── cron.test.mjs
+│   ├── gateway.test.mjs
+│   ├── outbound.test.mjs
+│   ├── web.test.mjs
+│   └── memory.test.mjs             含"已知局限"的固化断言
 ├── src/
-│   ├── index.mjs             组装（唯一知道用哪个渠道的地方）
-│   ├── config.mjs            所有环境变量只在这里读
-│   ├── events.mjs            事件总线
-│   ├── heartbeat.mjs         心跳
+│   ├── index.mjs                   组装（唯一知道用哪个渠道的地方）
+│   ├── config.mjs                  所有环境变量只在这里读
+│   ├── events.mjs                  事件总线
+│   ├── heartbeat.mjs               心跳
 │   ├── brain/
-│   │   ├── models.mjs        provider 集合
-│   │   └── loop.mjs          agent 循环 + 白名单闸门
+│   │   ├── models.mjs              provider 集合（pi-ai 提供）
+│   │   └── loop.mjs                agent 循环 + 白名单闸门
 │   ├── channels/
-│   │   ├── cli.mjs           命令行渠道
-│   │   └── feishu.mjs        飞书渠道
+│   │   ├── cli.mjs                 命令行渠道
+│   │   └── feishu.mjs              飞书渠道
 │   ├── gateway/
-│   │   ├── index.mjs         入站闸门（准入→幂等→限频）
-│   │   ├── access.mjs        准入白名单
-│   │   ├── ratelimit.mjs     令牌桶
-│   │   ├── dedupe.mjs        幂等去重
-│   │   └── outbound.mjs      长回复切分
+│   │   ├── index.mjs               入站闸门（准入→幂等→限频）
+│   │   ├── access.mjs              准入白名单
+│   │   ├── ratelimit.mjs           令牌桶
+│   │   ├── dedupe.mjs              幂等去重
+│   │   └── outbound.mjs            长回复切分
 │   ├── tools/
-│   │   ├── index.mjs         ★ 白名单唯一入口
+│   │   ├── index.mjs               ★ 白名单唯一入口
 │   │   ├── calc.mjs
 │   │   ├── now.mjs
 │   │   ├── history_search.mjs
-│   │   ├── web_search.mjs
-│   │   └── web_fetch.mjs
+│   │   ├── web_search.mjs          只负责发请求 + 选通道
+│   │   ├── web_fetch.mjs           只负责发请求
+│   │   └── lib/                    ★ 纯函数（不依赖 typebox，可离线单测）
+│   │       ├── html.mjs            HTML → 文本
+│   │       └── search-parse.mjs    结果解析 + 验证页识别
 │   ├── memory/
-│   │   ├── db.mjs            SQLite + FTS5
-│   │   ├── messages.mjs      会话历史
-│   │   └── search.mjs        长期检索
+│   │   ├── db.mjs                  SQLite + FTS5
+│   │   ├── messages.mjs            会话历史
+│   │   └── search.mjs              长期检索
 │   └── scheduler/
-│       ├── cron.mjs          自己写的 cron 解析器
-│       ├── jobs.mjs          ★ 任务清单
-│       └── index.mjs         定时器
+│       ├── cron.mjs                自己写的 cron 解析器
+│       ├── jobs.mjs                内置默认任务
+│       └── index.mjs               定时器 + jobs.json 热重载
 └── docs/
-    └── DESIGN.md             更详细的设计笔记
+    └── DESIGN.md                   更详细的设计笔记
 ```
 
 ---
@@ -341,9 +491,46 @@ erifane-bot/
 
 ---
 
+## 已知局限
+
+**这一节是刻意写全的。** 一个只讲优点、把短板留给别人踩的 demo，
+比一个功能少但边界清楚的 demo 差得多。
+
+| 局限 | 影响 | 现在怎么办 |
+|---|---|---|
+| **记忆是字面检索，无语义召回** | 同义改写、口语换词召不回 | 详见「设计决策 3」；测试里已固化边界 |
+| **多用户共享一个 Agent** | 所有人共用同一套工具权限 | 单用户信任模型；敌对用户要拆成独立实例 |
+| **消息串行处理** | 一次只能跑一个任务，后面排队 | 个人使用够；要并发得按 chatId 分队列 |
+| **无流式输出** | 要等全部生成完才看到回复 | 框架有 `message_update` 事件，接上即可 |
+| **记忆不会衰减** | 库会无限增长，检索质量随量下降 | 需要时间衰减 + 容量上限 |
+| **告警只在本机** | 出事时人不在电脑前不知道 | `data/ALERT` 文件 + journal；外部告警通道待做 |
+| **搜索依赖 DuckDuckGo** | 数据中心 IP 可能被人机验证拦 | 检测已做（不会误报"没搜到"）；可配 `BRAVE_API_KEY` 切换 |
+| **单机无冗余** | 服务器挂了服务就断 | 个人用途，接受 |
+| **未做端到端集成测试** | 飞书通道靠人工验证 | 单元测试覆盖了纯逻辑层；集成测试待补 |
+
+---
+
 ## 待办 / 下一步
 
+- [ ] 外部告警通道（把 `data/ALERT` 推到飞书/webhook）
+- [ ] 记忆层加语义召回（embedding + 混合排序）—— 见「设计决策 3」
+- [ ] 飞书渠道的集成测试（现在只有人工验证）
 - [ ] QQ 渠道（OneBot 11 反向 WebSocket）—— 验证协议无关设计
 - [ ] 流式输出接到飞书（打字机效果）
 - [ ] 用量统计与成本看板
 - [ ] 多用户（当前是单用户信任模型）
+
+---
+
+## 定位
+
+**这是一个 demo，不是生产系统。**
+
+它的价值不在功能数量（QQ、流式、多用户都还空着），而在于：
+
+- **每一层为什么在那儿**，都说得出理由
+- **踩过的坑和排查过程**都是真的（不是抄来的"最佳实践"）
+- **已知的短板**写在明处，而且部分被测试固化了
+- **哪块是框架给的、哪块是自己写的**，分得清清楚楚
+
+按这个口径讲就行 —— **别让文档的工整度替代系统的完成度。**
