@@ -77,6 +77,10 @@ Host erifane
     ServerAliveCountMax 3
 ```
 
+> 💡 **本机已经有这份 config 的话，公网 IP 和用户名直接就能看到**：
+> `Get-Content $env:USERPROFILE\.ssh\config`（Windows）或 `cat ~/.ssh/config`（Linux/macOS）。
+> **只有私钥不是"查一下就有"的** —— 见 §6.2。
+>
 > 📌 `README.md` 的部署示例里写的是 `ssh server` —— 那是**占位别名**。
 > 本机实际使用的别名是 `erifane`。看到 `server` 请自行替换。
 
@@ -199,9 +203,9 @@ journalctl -u erifane-bot -n 50 --no-pager
 
 ---
 
-## 6. 密钥怎么给
+## 6. 密钥与访问权限
 
-服务器 `.env` 里**实际存在**的变量（只有这 5 个）：
+### 6.1 服务器 `.env` 里实际存在的变量（只有这 5 个）
 
 ```
 DEEPSEEK_API_KEY
@@ -214,7 +218,34 @@ SCHEDULE_CHAT_ID       # 定时推送目标
 **其余全部没设**，走 `.env.example` 里的默认值：
 `PROVIDER` · `MODEL` · `DB_PATH` · `RATE_*` · `HISTORY_LIMIT` · `BRAVE_API_KEY` · `HEARTBEAT_FILE` · `BACKUP_KEEP`
 
-**给密钥的正确方式**：照 `.env.example` 自己建 `.env`，**值由项目所有者手输**。
+### 6.2 什么需要「交接」，什么可以自己查
+
+**关键区别：只有私钥是「只能由所有者主动给」的东西，其余全都能自己找到。**
+
+| 东西 | 在哪 | 接手方能自己拿到吗 |
+|---|---|---|
+| 服务器公网 IP | 本机 `~/.ssh/config`；或 Azure Portal；或在服务器上 `curl -s ifconfig.me` | ✅ 能 |
+| 用户名 | 本机 `~/.ssh/config`；或在服务器上 `whoami` | ✅ 能 |
+| **`.env` 的 5 个值** | **服务器 `~/erifane-bot/.env`** | ✅ 能 —— 有 SSH 权限就直接 `cat` |
+| **SSH 私钥 `id_ed25519`** | **只在本机 `~/.ssh/`**，服务器上**没有** | ❌ **不能 —— 必须所有者主动提供** |
+
+> 实测：服务器 `~/.ssh/` 里**只有 `authorized_keys`（公钥）**，没有私钥。
+> 公钥推不出私钥 —— 所以拿不到私钥就进不了服务器。
+
+**由此推出两种交接场景：**
+
+- **接手方在同一台电脑上**（比如只是换一个 Agent 工具）：
+  它能自己读 `~/.ssh/config`、能 SSH 上去读 `.env` —— **你什么都不用给。**
+- **接手方在另一台机器 / 是另一个人**：
+  **只有私钥需要你主动给**，其余它会自己找到。
+
+### 6.3 如果不是在原服务器上部署
+
+照 `.env.example` 自己建 `.env`，值从服务器上取：
+
+```bash
+ssh erifane 'cat ~/erifane-bot/.env'
+```
 
 ### ⚠️ 两个必须避开的泄露路径
 
