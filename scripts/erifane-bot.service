@@ -1,0 +1,45 @@
+# ═══════════════════════════════════════════════════════════
+# Erifane Bot —— systemd 服务单元
+# ═══════════════════════════════════════════════════════════
+# 安装：
+#   sudo cp scripts/erifane-bot.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now erifane-bot
+#
+# 注意：ExecStart 里的 node 路径必须先确认（which node）。
+# ═══════════════════════════════════════════════════════════
+
+[Unit]
+Description=Erifane Bot - personal AI agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+
+# ── 用普通用户跑，不用 root ──
+# 这是最小权限原则：agent 有工具能力，不该以 root 身份活着。
+User=azureuser
+Group=azureuser
+
+WorkingDirectory=/home/azureuser/erifane-bot
+
+# 渠道用环境变量指定（其余配置在 .env 里，由 config.mjs 读取）
+Environment=CHANNEL=feishu
+Environment=NODE_ENV=production
+
+ExecStart=/usr/bin/node src/index.mjs
+
+# ── 崩溃自动重启 ──
+# always：无论正常退出还是崩溃都重启
+# 注意：这只能处理【进程退出】。进程卡死要靠 heartbeat + healthcheck.sh
+Restart=always
+RestartSec=10
+
+# ── 日志进 journald ──
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=erifane-bot
+
+[Install]
+WantedBy=multi-user.target

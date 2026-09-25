@@ -1,0 +1,25 @@
+# ═══════════════════════════════════════════════
+#  统一换行符为 LF
+# ═══════════════════════════════════════════════
+# 为什么重要：
+#   Windows 上默认是 CRLF，Linux 上默认是 LF。
+#   如果仓库里存了 CRLF：
+#     · .sh 脚本在 Linux 上会报 "bad interpreter" 或语法错
+#     · diff 会显示整文件改动，噪声很大
+#
+#   统一成 LF 后，无论谁在什么系统上 clone，拿到的都是 LF。
+#   工作副本会被 Git 自动转换，编辑体验不受影响。
+# ═══════════════════════════════════════════════
+
+* text=auto eol=lf
+
+# shell 脚本必须是 LF，否则 Linux 上直接跑不了
+*.sh text eol=lf
+
+# 这些是二进制，别动
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.db binary
