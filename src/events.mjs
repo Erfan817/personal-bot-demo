@@ -15,11 +15,20 @@ export function on(event, fn) {
   listeners.get(event).push(fn);
 }
 
-/** 发布事件（单个订阅者出错不影响其他订阅者） */
+/** 发布事件（单个订阅者出错不影响其他订阅者）
+ *
+ * 注意：try/catch 只能接住【同步】异常。订阅 async 函数时它返回 Promise，
+ * rejection 必须单独接住 —— 否则就是 unhandledRejection，静默漏掉。
+ */
 export function emit(event, payload) {
   for (const fn of listeners.get(event) ?? []) {
     try {
-      fn(payload);
+      const r = fn(payload);
+      if (r && typeof r.catch === "function") {
+        r.catch((e) =>
+          console.error(`[events] "${event}" 订阅者出错: ${e.message}`),
+        );
+      }
     } catch (e) {
       console.error(`[events] "${event}" 订阅者出错: ${e.message}`);
     }

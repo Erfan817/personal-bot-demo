@@ -6,6 +6,7 @@
  */
 import { Type } from "typebox";
 import { htmlToText, truncate } from "./lib/html.mjs";
+import { assertPublicUrl } from "./lib/net.mjs";
 
 const UA =
   "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36";
@@ -24,11 +25,11 @@ export default {
 
   async execute(toolCallId, params) {
     const url = String(params.url ?? "").trim();
-    if (!/^https?:\/\//i.test(url)) {
-      throw new Error("网址必须以 http:// 或 https:// 开头");
-    }
 
-    const res = await fetch(url, {
+    // 协议白名单 + 内网/本机地址拦截（SSRF）都在这一关
+    const target = await assertPublicUrl(url);
+
+    const res = await fetch(target, {
       headers: {
         "User-Agent": UA,
         "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",

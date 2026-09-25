@@ -120,7 +120,7 @@ Restart          = always
 | 心跳 | 最新一次约 **38 秒前**（阈值 300 秒）→ 正常 |
 | 告警 | 无 `data/ALERT`，失败计数 `0` → **健康** |
 | 备份 | 4 份（2 组 `memory-*.db` + `env-*`），保留上限 7 |
-| 测试 | **54 / 54 通过**，0 失败，耗时 431 ms |
+| 测试 | **66 / 66 通过**，0 失败（2026-09-25 14:25 实测；新增内网拦截、事件总线用例后由 54 增至 66） |
 | 项目文件数 | 61（不含 `node_modules`） |
 
 `data/` 目录实际内容：
@@ -192,7 +192,7 @@ cat ~/erifane-bot/data/heartbeat; date +%s%3N
 # ④ 有没有告警
 ls ~/erifane-bot/data/ALERT        # 报错=没有告警=健康
 
-# ⑤ 测试还过吗（应该是 54/54）
+# ⑤ 测试还过吗（应该是 66/66）
 cd ~/erifane-bot && node --test tests/*.test.mjs
 
 # ⑥ 定时任务到底是什么
@@ -295,7 +295,6 @@ ssh erifane 'cat ~/erifane-bot/.env'
 
 | 位置 | 问题 |
 |---|---|
-| `scripts/backup.mjs` 头部注释 | 还写着「由 cron 每天跑一次」和 crontab 安装方式 —— **实际已迁移到 systemd timer**，注释没跟上 |
 | `README.md` 部署示例 | 用 `ssh server` 占位，本机实际别名是 `erifane` |
 | `scripts/healthcheck.sh` | `BASE` 是**硬编码绝对路径** `/home/azureuser/erifane-bot` —— 换用户或换路径必须改 |
 

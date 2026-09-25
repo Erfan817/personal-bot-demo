@@ -1,7 +1,8 @@
 /**
  * 运维 · 备份
  * ═══════════════════════════════════════════════════
- * 由 cron 每天跑一次（建议凌晨）。
+ * 由 systemd timer 每天跑一次（erifane-backup.timer，04:00，Persistent=true）。
+ * 早期用 crontab，已迁移到 systemd timer —— 原因见 README「运维」。
  *
  * 备份什么：
  *   · data/memory.db  —— 全部对话历史和长期记忆
@@ -13,8 +14,9 @@
  *   正确做法是用 SQLite 自己的备份 API —— better-sqlite3 提供了
  *   db.backup()，它会先做一致性快照再复制。
  *
- * 安装（root 或 azureuser 的 crontab 都行）：
- *   0 4 * * * /usr/bin/node /home/azureuser/erifane-bot/scripts/backup.mjs
+ * 安装见 README「运维」一节：
+ *   sudo cp scripts/erifane-backup.service scripts/erifane-backup.timer /etc/systemd/system/
+ *   sudo systemctl enable --now erifane-backup.timer
  */
 import { mkdirSync, readdirSync, rmSync, statSync, copyFileSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
@@ -61,4 +63,4 @@ for (const { f } of old) {
   console.log(`[backup] 清理旧备份 ${f}`);
 }
 
-console.log(`[backup] 完成，当前保留 ${Math.min(KEEP, readdirSync(BACKUP_DIR).length)} 份`);
+console.log(`[backup] 完成，数据库备份保留 ${Math.min(KEEP, readdirSync(BACKUP_DIR).filter((f) => f.startsWith("memory-")).length)} 份`);

@@ -22,10 +22,19 @@ import { loadRecent, saveMessage } from "../memory/index.mjs";
  */
 export async function runAgent(
   userText,
-  { chatId = "cli", announce = true } = {},
+  { chatId = "cli", announce = true, timeoutMs } = {},
 ) {
+  // 超时值要防呆：NaN > 0 是 false，配错时逐级退回默认，
+  // 绝不能把 NaN 交给 setTimeout —— 那会立刻触发、每轮都被"超时"
+  const limit =
+    Number.isFinite(timeoutMs) && timeoutMs > 0
+      ? timeoutMs
+      : config.agent.timeoutMs > 0
+        ? config.agent.timeoutMs
+        : 120_000;
   let turn = 0;
   let answer = null;
+  let timedOut = false;
   const pending = new Map(); // toolCallId -> { name, args }
 
   // ① 载入历史
@@ -96,9 +105,13 @@ export async function runAgent(
         answer = extractText(last);
 
         if (!answer) {
-          answer = agent.state.errorMessage
-            ? `⚠️ 模型调用失败：${agent.state.errorMessage}`
-            : "⚠️ 没能生成回复（模型没有返回内容），请查看服务端日志。";
+          if (timedOut) {
+            answer = `⏱️ 这条消息处理超过 ${Math.round(limit / 1000)} 秒仍未完成，已中止。请重试，或换个问法。`;
+          } else {
+            answer = agent.state.errorMessage
+              ? `⚠️ 模型调用失败：${agent.state.errorMessage}`
+              : "⚠️ 没能生成回复（模型没有返回内容），请查看服务端日志。";
+          }
         }
 
         if (announce) emit("answer", answer);
@@ -107,7 +120,27 @@ export async function runAgent(
     }
   });
 
-  await agent.prompt(userText);
+  // 整体超时：到点 abort 当前运行。框架对 abort 的处理是走
+  // handleRunFailure -> 照常发 agent_end，所以 prompt() 会正常返回，
+  // 调用方（串行队列）不需要"放弃等待"，也就不会出现
+  // 「迟到的回答串进下一条消息的会话」这种竞态。
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    agent.abort();
+  }, limit);
+
+  try {
+    await agent.prompt(userText);
+  } finally {
+    clearTimeout(timeout);
+  }
+
+  // 兜底：正常路径 agent_end 里已经把超时提示写进 answer；
+  // 万一 agent_end 没发（理论上不可能），也保证用户收到一条回音
+  if (!answer && timedOut) {
+    answer = `⏱️ 这条消息处理超过 ${Math.round(limit / 1000)} 秒仍未完成，已中止。请重试，或换个问法。`;
+    if (announce) emit("answer", answer);
+  }
 
   // ② 落盘
   saveMessage(chatId, "user", userText);

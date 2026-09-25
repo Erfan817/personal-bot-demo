@@ -65,7 +65,8 @@ npm run check   # 对所有 .mjs 跑 node --check
 | `cron.test.mjs` | 解析 / 匹配 / 非法输入 | 含「日 vs 周」那个经典陷阱 |
 | `gateway.test.mjs` | 准入 / 幂等 / 限频 / **顺序** | 验证「陌生人不消耗你的令牌」 |
 | `outbound.test.mjs` | 长回复切分 | 不把句子劈开、内容不丢 |
-| `web.test.mjs` | HTML→文本 / 验证页识别 / URL 拆包 | 含「区分没有数据 vs 拿不到数据」 |
+| `web.test.mjs` | HTML→文本 / 验证页识别 / URL 拆包 / **内网地址拦截** | 含「区分没有数据 vs 拿不到数据」+ SSRF 防护 |
+| `events.test.mjs` | 事件总线 | 同步异常与 **async 订阅者的 rejection** 都要被接住 |
 | `memory.test.mjs` | 存取 / 索引同步 / 会话隔离 | **含"已知局限"的固化断言** |
 
 > 其中 `memory.test.mjs` 有一组**故意断言"检索不到"**的用例 ——

@@ -1,9 +1,10 @@
 /**
  * 联网工具测试
  *
- * 覆盖两个「肉眼查不出来」的地方：
+ * 覆盖三个「肉眼查不出来」的地方：
  *   1. HTML → 纯文本的剥离规则（脚本/样式残留、实体没解码）
  *   2. DuckDuckGo 的「验证页」识别（不识别就会误报"没搜到"）
+ *   3. 内网地址拦截（SSRF —— 拦不住，agent 就能被网页内容诱导着摸内网）
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -13,6 +14,11 @@ import {
   unwrapDdg,
   parseDdg,
 } from "../src/tools/lib/search-parse.mjs";
+import {
+  isPrivateIp,
+  isPrivateHostname,
+  assertPublicUrl,
+} from "../src/tools/lib/net.mjs";
 
 /* ══════════════════ web_fetch · htmlToText ══════════════════ */
 
@@ -126,4 +132,89 @@ test("limit 生效", () => {
 
 test("没有结果时返回空数组（由上层决定怎么报错）", () => {
   assert.deepEqual(parseDdg("<html>什么都没有</html>", 5), []);
+});
+
+/* ══════════════════ web_fetch · 内网地址拦截（SSRF） ══════════════════ */
+
+test("★ 私网/环回 IPv4 一律拦截", () => {
+  assert.equal(isPrivateIp("127.0.0.1"), true);
+  assert.equal(isPrivateIp("127.8.8.8"), true, "整个 127/8 都是环回");
+  assert.equal(isPrivateIp("10.1.2.3"), true);
+  assert.equal(isPrivateIp("172.16.0.1"), true);
+  assert.equal(isPrivateIp("172.31.255.255"), true);
+  assert.equal(isPrivateIp("192.168.1.1"), true);
+  assert.equal(isPrivateIp("169.254.169.254"), true, "云元数据必须在拦截范围");
+  assert.equal(isPrivateIp("0.1.2.3"), true, "0/8 未指定段");
+  assert.equal(isPrivateIp("224.0.0.1"), true, "组播段");
+});
+
+test("公网 IPv4 不误伤", () => {
+  assert.equal(isPrivateIp("8.8.8.8"), false);
+  assert.equal(isPrivateIp("172.32.0.1"), false, "172.32 已出 172.16/12 范围");
+  assert.equal(isPrivateIp("169.253.1.1"), false, "差一段就是链路本地，不能拦");
+});
+
+test("IPv6：环回 / 链路本地 / unique-local / IPv4-mapped 拦截", () => {
+  assert.equal(isPrivateIp("::1"), true);
+  assert.equal(isPrivateIp("::"), true);
+  assert.equal(isPrivateIp("fe80::1"), true);
+  assert.equal(isPrivateIp("fd00::1"), true);
+  assert.equal(isPrivateIp("::ffff:127.0.0.1"), true, "IPv4-mapped 要转回 v4 判");
+  assert.equal(isPrivateIp("2606:4700::1111"), false, "公网 v6 不误伤");
+});
+
+test("主机名判断：localhost 和裸私网 IP 直接拦，域名交给 DNS 阶段", () => {
+  assert.equal(isPrivateHostname("localhost"), true);
+  assert.equal(isPrivateHostname("LOCALHOST"), true);
+  assert.equal(isPrivateHostname("[::1]"), true, "URL.hostname 对 IPv6 带方括号，要剥掉");
+  assert.equal(isPrivateHostname("192.168.0.1"), true);
+  assert.equal(isPrivateHostname("example.com"), false, "false 只代表『走 DNS 再判』");
+});
+
+test("assertPublicUrl：非 http(s) 协议拒绝", async () => {
+  await assert.rejects(
+    () => assertPublicUrl("ftp://example.com/file"),
+    /http/,
+  );
+  await assert.rejects(() => assertPublicUrl("file:///etc/passwd"), /http/);
+});
+
+test("assertPublicUrl：显式内网地址拒绝", async () => {
+  await assert.rejects(
+    () => assertPublicUrl("http://127.0.0.1:8080/admin"),
+    /内网|127\.0\.0\.1/,
+  );
+  await assert.rejects(
+    () => assertPublicUrl("http://169.254.169.254/metadata/instance"),
+    /内网|169\.254/,
+  );
+  await assert.rejects(
+    () => assertPublicUrl("http://localhost:3000/"),
+    /内网|localhost/,
+  );
+});
+
+test("assertPublicUrl：域名解析出私网 IP 也要拦（DNS 阶段检查）", async () => {
+  // 注入假 DNS：域名表面是公网，解析出来却指向内网 —— 必须拦
+  const fake = async () => [{ address: "10.0.0.5", family: 4 }];
+  await assert.rejects(
+    () => assertPublicUrl("http://evil.example/", { lookupFn: fake }),
+    /10\.0\.0\.5/,
+  );
+});
+
+test("assertPublicUrl：解析出公网 IP 放行（注入假 DNS，离线可测）", async () => {
+  const fake = async () => [{ address: "93.184.216.34", family: 4 }];
+  const u = await assertPublicUrl("https://example.com/path", { lookupFn: fake });
+  assert.equal(u.hostname, "example.com");
+});
+
+test("assertPublicUrl：解析失败也拒绝（别让 fetch 自己去撞运气）", async () => {
+  const fake = async () => {
+    throw new Error("ENOTFOUND");
+  };
+  await assert.rejects(
+    () => assertPublicUrl("http://nope.example/", { lookupFn: fake }),
+    /解析失败/,
+  );
 });

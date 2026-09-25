@@ -21,6 +21,10 @@ export const config = {
 
   agent: {
     maxSteps: Number(process.env.MAX_STEPS ?? 5),
+    // 单轮问答的整体超时：模型挂住时中止本轮。
+    // 没有它，串行队列会被一次挂起的调用永久堵死，
+    // 而心跳是独立定时器，照样在写 —— healthcheck 探测不到这种"队列假活"。
+    timeoutMs: Number(process.env.AGENT_TIMEOUT_MS ?? 120_000),
     systemPrompt:
       process.env.SYSTEM_PROMPT ??
       "你是一个简洁、直接的中文助手。需要计算、查时间或回忆过去对话时必须调用工具，不要凭记忆猜。",

@@ -15,7 +15,7 @@
  * 改完文件不用重启服务，下一 tick 自动生效。
  */
 import { existsSync, readFileSync, writeFileSync, mkdirSync, statSync } from "node:fs";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 import { parseCron, matches } from "./cron.mjs";
 import { defaultJobs } from "./jobs.mjs";
 import { config } from "../config.mjs";
@@ -23,6 +23,29 @@ import { emit } from "../events.mjs";
 import { runAgent } from "../brain/loop.mjs";
 
 const JOBS_FILE = config.scheduler.jobsFile;
+
+// 「上次检查到的分钟」要落盘：
+//   · 同一分钟内服务重启 -> 读回来，不会把刚触发过的任务再打一遍
+//   · 重启恰好跨过触发分钟 -> 那一轮就错过了（早报这类内容，过点补发没有意义）
+// 之前只放内存里，重启即失忆 —— 实测重启并不罕见，08:00 触发后重启会推两遍。
+const STATE_FILE = join(dirname(JOBS_FILE), "scheduler-state.json");
+
+function loadLastKey() {
+  try {
+    const s = JSON.parse(readFileSync(STATE_FILE, "utf8"));
+    return typeof s.lastKey === "string" ? s.lastKey : null;
+  } catch {
+    return null; // 不存在 / 损坏，都当「没有记录」
+  }
+}
+
+function saveLastKey(key) {
+  try {
+    writeFileSync(STATE_FILE, JSON.stringify({ lastKey: key }, null, 2) + "\n");
+  } catch (e) {
+    console.error(`[调度] 写状态文件失败: ${e.message}`);
+  }
+}
 
 /** 读任务清单；文件不存在就用内置默认，并把它写出去方便你改 */
 function loadJobs() {
@@ -82,7 +105,7 @@ export function startScheduler() {
     );
   }
 
-  let lastKey = null;
+  let lastKey = loadLastKey();
 
   /** 热重载：文件变了就重新读 */
   function maybeReload() {
@@ -106,8 +129,9 @@ export function startScheduler() {
 
     const now = new Date();
     const key = `${now.getFullYear()}/${now.getMonth()}/${now.getDate()} ${now.getHours()}:${now.getMinutes()}`;
-    if (key === lastKey) return; // 同一分钟只检查一次
+    if (key === lastKey) return; // 同一分钟只检查一次（重启后靠状态文件续上）
     lastKey = key;
+    saveLastKey(key);
 
     for (const job of jobs) {
       if (!matches(job.cronParsed, now)) continue;
