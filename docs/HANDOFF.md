@@ -176,6 +176,10 @@ memory.db-wal    3.6 MB    ← 数据其实大部分在这里
 ## 5. 接手后的第一件事：跑通验证链条
 
 ```bash
+# ⓪ 本机装依赖（node_modules 不在仓库里，默认是空的）
+cd <项目目录>
+npm install
+
 # ① 连上
 ssh erifane
 

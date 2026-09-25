@@ -25,6 +25,13 @@
     "test:watch": "node --test --watch tests/*.test.mjs",
     "check": "node scripts/check-syntax.mjs"
   },
+  "dependencies": {
+    "@earendil-works/pi-agent-core": "^0.87.1",
+    "@earendil-works/pi-ai": "^0.87.1",
+    "@larksuiteoapi/node-sdk": "^1.74.0",
+    "better-sqlite3": "^13.0.3",
+    "typebox": "^1.3.34"
+  },
   "engines": {
     "node": ">=22"
   }
