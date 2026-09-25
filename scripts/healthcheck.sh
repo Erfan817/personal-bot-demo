@@ -42,7 +42,9 @@ MAX_AGE=300          # 心跳超过 5 分钟没更新 = 卡死
 MAX_CONSECUTIVE=3    # 连续 3 次异常就停手并告警
 TAG="erifane-healthcheck"
 
-log() { logger -t "$TAG" "$1"; echo "[$TAG] $1"; }
+# 只 echo —— systemd 会自动把 stdout 收进 journal。
+# 之前同时用了 logger 和 echo，导致每条日志在 journal 里出现两次。
+log() { echo "[$TAG] $1"; }
 
 read_fails() { cat "$FAIL_FILE" 2>/dev/null || echo 0; }
 write_fails() { echo "$1" >"$FAIL_FILE"; }
@@ -91,8 +93,8 @@ fail() {
       echo "  df -h /            # 磁盘是否满了"
       echo "  free -h            # 内存是否耗尽"
       echo ""
-      echo "恢复后删除本文件即可解除告警："
-      echo "  rm $ALERT_FILE"
+      echo "恢复后删除本文件即可解除告警（文件属于 root，要 sudo）："
+      echo "  sudo rm $ALERT_FILE"
     } >"$ALERT_FILE"
 
     log "🚨 连续 ${fails} 次异常，已停止自动重启并写入告警：$ALERT_FILE"
