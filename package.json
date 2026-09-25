@@ -1,6 +1,6 @@
 {
   "name": "personal-bot-demo",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "description": "个人 BOT demo —— 分层架构的自托管个人 Agent",
