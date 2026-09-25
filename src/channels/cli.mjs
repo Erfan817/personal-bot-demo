@@ -13,14 +13,15 @@ import { on } from "../events.mjs";
 
 export function startCli() {
   // ── 订阅大脑的事件（这一步就是「渠道」的全部工作）──
-  on("step", (n) => console.log(`\n── 第 ${n} 轮 ──`));
+  // 事件现在都带 chatId —— cli 只有一个会话，解构出自己关心的字段就行
+  on("step", ({ n }) => console.log(`\n── 第 ${n} 轮 ──`));
 
   on("tool_call", ({ name, args, result }) => {
     console.log(`🔧 ${name}(${JSON.stringify(args)})`);
     console.log(`   ↳ ${result}`);
   });
 
-  on("answer", (text) => console.log(`\n🤖 ${text}`));
+  on("answer", ({ text }) => console.log(`\n🤖 ${text}`));
 
   // 调度层的定时推送（cli 模式跑完就退出，这里一般不会触发；
   // 留着是为了让"渠道层订阅 deliver"这件事在两种渠道里保持一致）

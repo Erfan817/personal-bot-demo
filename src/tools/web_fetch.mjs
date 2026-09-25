@@ -7,6 +7,7 @@
 import { Type } from "typebox";
 import { htmlToText, truncate } from "./lib/html.mjs";
 import { assertPublicUrl } from "./lib/net.mjs";
+import { wrapExternal } from "./lib/boundary.mjs";
 
 const UA =
   "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36";
@@ -58,5 +59,6 @@ export default {
 };
 
 function out(text) {
-  return { content: [{ type: "text", text }] };
+  // 数据边界：网页正文只是资料，包上标记再进上下文
+  return { content: [{ type: "text", text: wrapExternal(text, "网页正文") }] };
 }

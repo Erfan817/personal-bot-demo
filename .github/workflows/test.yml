@@ -1,0 +1,23 @@
+name: test
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [22, 24]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      # ubuntu runner 能正常装原生 better-sqlite3（本机装不上是 Windows 环境的事），
+      # 所以 CI 跑的是【全部】测试 —— 「N/N 通过」从此有凭证，
+      # 不再依赖有人记得去服务器上敲一遍。
+      - run: npm ci
+      - run: npm run check
+      - run: npm test

@@ -68,7 +68,14 @@ npm run check   # 对所有 .mjs 跑 node --check
 | `web.test.mjs` | HTML→文本 / 验证页识别 / URL 拆包 / **内网地址拦截** | 含「区分没有数据 vs 拿不到数据」+ SSRF 防护 |
 | `events.test.mjs` | 事件总线 | 同步异常与 **async 订阅者的 rejection** 都要被接住 |
 | `reminder.test.mjs` | 提醒任务的增删 / cron 人话化 | 同名是更新不是重复建；翻译翻不动就回退原文 |
+| `queue.test.mjs` | **全局串行队列** | 并发必须为 1；一个任务炸了不堵后面的 |
+| `usage.test.mjs` | 用量累计 / 日额度闸门 | 跨天开新账；告警当天只写一次 |
+| `misfire.test.mjs` | 错过触发分钟的扫描 | 已处理过的分钟不算错过；只补最近一次 |
 | `memory.test.mjs` | 存取 / 索引同步 / 会话隔离 | **含"已知局限"的固化断言** |
+
+> CI：每次 push / PR，GitHub Actions 会跑 `npm run check` + 全部测试
+> （Node 22 和 24 两个版本，见 `.github/workflows/test.yml`）——
+> 测试数字有凭证，不依赖有人记得去服务器上敲一遍。
 
 > 其中 `memory.test.mjs` 有一组**故意断言"检索不到"**的用例 ——
 > 把已知失效场景写成测试，缺陷就变成了**有意的设计取舍**，而不是运行时的惊喜。
@@ -326,7 +333,7 @@ systemd 的 `Restart=always` **只能处理进程退出**。进程活着但事�
 | 运维 | systemd + cron + journald |
 | 基础设施 | Azure（Korea Central）· Ubuntu 22.04 · 2 vCPU / 1 GiB + 8 GB swap |
 
-**依赖总数：4 个。** 没有构建步骤、没有 Docker、没有数据库服务。
+**依赖总数：5 个。** 没有构建步骤、没有 Docker、没有数据库服务。
 
 ---
 
@@ -402,6 +409,14 @@ journalctl -u erifane-healthcheck -n 20 --no-pager
 心跳恢复     -> 计数自动复位、告警自动清除
 ```
 
+**备份与恢复**（`scripts/backup.mjs` + `scripts/restore.mjs`）：
+
+- 备份目录默认在**家目录、项目之外**（`~/erifane-backups`，可用 `BACKUP_DIR` 改）——
+  备份里的 `env-*` 是明文密钥，不跟项目树放一起，全部文件 0600；
+- 文件名用**本地时间**（北京时间的 04:00 备份就叫当天 04:00，不是 UTC 的前一天 20:00）；
+- 恢复演练不用停服务：`node scripts/restore.mjs --verify <backup.db>`
+  做完整性检查 + 行数对读；真恢复要求先 `sudo systemctl stop erifane-bot`。
+
 **告警文件长这样**（`~/erifane-bot/data/ALERT`）：
 
 ```
@@ -415,13 +430,17 @@ journalctl -u erifane-healthcheck -n 20 --no-pager
 **还没做的**：这是**本机告警**，不是**外部告警**。真要"出事时人不在电脑前也能知道"，
 得把 `ALERT` 推到飞书/邮件/webhook —— 那是待办里的「外部告警通道」。
 
-**改完代码的部署流程**：
+**改完代码的部署流程**（服务器 `~/erifane-bot` 是 git 仓库，remote 指向本仓库）：
 
 ```bash
-scp -r src/ server:~/erifane-bot/        # 推代码
-ssh server 'sudo systemctl restart erifane-bot'
-ssh server 'journalctl -u erifane-bot -f' # 看结果
+ssh erifane
+cd ~/erifane-bot
+git fetch origin && git reset --hard origin/main   # 部署；reset 到任意旧 commit 即回滚
+sudo systemctl restart erifane-bot
+journalctl -u erifane-bot -f                        # 看结果
 ```
+
+⚠️ 因此**不要在服务器上直接改文件** —— 下次 reset 会被冲掉。改代码走仓库。
 
 ---
 

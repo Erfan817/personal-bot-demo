@@ -125,6 +125,9 @@ export default {
         cron: cronExpr,
         prompt: `定时提醒到点了。请直接、简短地提醒用户：${text}`,
         enabled: true,
+        // 提醒是「时间型」任务：服务重启跨过触发点也要补发，
+        // 不然「8 点提醒我吃药」赶上一次重启就真的不响，还没人知道。
+        misfire: "catchup",
       };
       const r = upsertJob(readJobs(), job);
       writeJobs(r.jobs);

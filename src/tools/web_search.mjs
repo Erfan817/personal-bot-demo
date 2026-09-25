@@ -10,6 +10,7 @@
  */
 import { Type } from "typebox";
 import { isDdgBlocked, parseDdg, formatResults } from "./lib/search-parse.mjs";
+import { wrapExternal } from "./lib/boundary.mjs";
 
 const UA =
   "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36";
@@ -39,7 +40,8 @@ export default {
       ? await searchBrave(query, limit, braveKey)
       : await searchDuckDuckGo(query, limit);
 
-    return { content: [{ type: "text", text }] };
+    // 数据边界：搜索结果只是资料，包上标记再进上下文
+    return { content: [{ type: "text", text: wrapExternal(text, "网页搜索") }] };
   },
 };
 

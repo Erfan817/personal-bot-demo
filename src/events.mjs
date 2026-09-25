@@ -37,7 +37,12 @@ export function emit(event, payload) {
 
 /**
  * 事件清单（约定）：
- *   step       {number}                      进入第 N 轮
- *   tool_call  {name, args, result}          工具被调用
- *   answer     {text}                        最终回答
+ *   step       {chatId, n}                        进入第 N 轮
+ *   tool_call  {chatId, name, args, result}       工具被调用
+ *   answer     {chatId, text}                     最终回答
+ *   deliver    {chatId, text}                     调度层的定时推送
+ *
+ * ★ 每个事件都带 chatId —— 路由是订阅者自己的事，但标识必须由源头带上。
+ *   早期 answer/tool_call 不带会话标识，靠「渠道串行」保证不串话；
+ *   第二个渠道一接进来就必然串（工具过程发进另一个会话）。
  */

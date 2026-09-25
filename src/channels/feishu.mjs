@@ -2,8 +2,8 @@
  * 协议层 · 飞书渠道
  * ═══════════════════════════════════════════════════════════
  * 三件事：
- *   1. 飞书来的消息  -> 过桥接层闸门 -> 交给大脑
- *   2. 大脑的事件    -> 发到飞书（用户主动问的）
+ *   1. 飞书来的消息  -> 过桥接层闸门 -> 入全局串行队列
+ *   2. 大脑的事件    -> 按 chatId 路由 -> 发回对应会话
  *   3. deliver 事件  -> 发到指定会话（调度层定时推的）
  *
  * ★ 3 秒约束（飞书官方要求）
@@ -11,13 +11,17 @@
  *   agent 跑一轮要好几秒 —— 所以：
  *     收到 -> 过闸门 -> 入队 -> 【立刻 return】
  *     后台 worker 慢慢跑 -> 跑完主动发消息回去
- * ═══════════════════════════════════════════════════════════
+ *
+ * ★ 会话标识必须跟着事件走
+ *   answer / tool_call 事件自带 chatId（大脑层填的），这里只负责路由。
+ *   早期版本用模块级 currentChatId 变量记「当前在服务谁」——
+ *   单渠道 + 严格串行时碰巧正确，第二个渠道一进来就必然串话。
  */
 import * as Lark from "@larksuiteoapi/node-sdk";
-import { runAgent } from "../brain/loop.mjs";
 import { on } from "../events.mjs";
 import { config } from "../config.mjs";
 import { admit, shapeReply, isConfigured } from "../gateway/index.mjs";
+import { enqueueAgentJob } from "../brain/queue.mjs";
 
 export function startFeishu() {
   const { appId, appSecret } = config.feishu;
@@ -31,20 +35,20 @@ export function startFeishu() {
     );
   }
 
-  // ══════ 出站 ①：用户主动问 -> 大脑事件 -> 发回当前会话 ══════
-  let currentChatId = null;
-  let toolLog = [];
+  // ══════ 出站 ①：大脑事件 -> 按 chatId 路由 ══════
+  // 每个会话一份工具过程日志；answer 到达时拼上去一起发，然后清掉
+  const toolLogs = new Map(); // chatId -> string[]
 
-  on("tool_call", ({ name, args, result }) => {
-    toolLog.push(`🔧 ${name}(${JSON.stringify(args)})\n   ↳ ${result}`);
+  on("tool_call", ({ chatId, name, args, result }) => {
+    const log = toolLogs.get(chatId) ?? [];
+    log.push(`🔧 ${name}(${JSON.stringify(args)})\n   ↳ ${result}`);
+    toolLogs.set(chatId, log);
   });
 
-  on("answer", async (text) => {
-    const chatId = currentChatId;
-    const body = [...toolLog, "", text].join("\n").trim();
-    toolLog = [];
-    currentChatId = null;
-
+  on("answer", async ({ chatId, text }) => {
+    const lines = toolLogs.get(chatId) ?? [];
+    toolLogs.delete(chatId);
+    const body = [...lines, "", text].join("\n").trim();
     if (!chatId || !body) return;
     await deliver(client, chatId, body);
   });
@@ -54,31 +58,7 @@ export function startFeishu() {
     await deliver(client, chatId, text);
   });
 
-  // ══════ 入站：串行队列 ══════
-  const queue = [];
-  let working = false;
-
-  async function worker() {
-    if (working) return;
-    working = true;
-    try {
-      while (queue.length) {
-        const job = queue.shift();
-        currentChatId = job.chatId;
-        toolLog = [];
-        try {
-          await runAgent(job.text, { chatId: job.chatId });
-        } catch (e) {
-          await deliver(client, job.chatId, `❌ 出错了：${e.message}`);
-          currentChatId = null;
-        }
-      }
-    } finally {
-      working = false;
-    }
-  }
-
-  // ══════ 启动长连接 ══════
+  // ══════ 入站：过闸门 -> 入全局串行队列 -> 立刻返回 ══════
   const wsClient = new Lark.WSClient({
     appId,
     appSecret,
@@ -122,10 +102,19 @@ export function startFeishu() {
           console.log(`         内容：${text}`);
 
           // 只入队，不 await —— 立刻返回让 SDK 去 ACK
-          queue.push({ chatId: msg.chat_id, text: text.trim() });
-          worker().catch((e) =>
-            console.error("[feishu] worker 异常:", e.message),
-          );
+          // 队列在 brain 层（全局串行）：调度器的任务也走同一条队
+          const chatId = msg.chat_id;
+          enqueueAgentJob({
+            chatId,
+            text: text.trim(),
+            announce: true,
+            onError: (e) => {
+              console.error("[feishu] 任务执行异常:", e.message);
+              deliver(client, chatId, `❌ 出错了：${e.message}`).catch(
+                (err) => console.error("[feishu] 错误提示发送失败:", err.message),
+              );
+            },
+          });
         } catch (e) {
           // 关键：绝不向外抛异常，否则飞书会重推
           console.error("[feishu] 处理事件出错:", e.message);

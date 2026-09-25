@@ -5,7 +5,8 @@
  *     ↓
  *   有没有任务的 cron 命中了当前这一分钟？
  *     ↓ 有
- *   跑 agent（announce: false，不推过程噪音）
+ *   入【全局串行队列】（brain/queue.mjs —— 和用户消息同一条队，
+ *   早报跑着的时候你发消息，排队等，而不是两条 agent 同时跑）
  *     ↓
  *   emit("deliver", { chatId, text })
  *     ↓
@@ -13,35 +14,47 @@
  *
  * 任务清单来自 data/jobs.json（运行时配置），支持热重载：
  * 改完文件不用重启服务，下一 tick 自动生效。
+ *
+ * 错过触发分钟的处理（misfire）：任务自带策略 ——
+ *   · 内容型（默认）过期无意义，跳过；
+ *   · 时间型（remind_me 建的提醒）misfire: "catchup"，启动时补发最近一次。
+ *     例：「8:00 提醒我吃药」，服务 7:58-8:20 重启，8:20 启动时补发。
  */
 import { existsSync, readFileSync, writeFileSync, mkdirSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { parseCron, matches } from "./cron.mjs";
+import { scanMissed } from "./misfire.mjs";
 import { defaultJobs } from "./jobs.mjs";
 import { config } from "../config.mjs";
 import { emit } from "../events.mjs";
-import { runAgent } from "../brain/loop.mjs";
+import { enqueueAgentJob } from "../brain/queue.mjs";
+import { overLimit, noteBlocked, usedTokens } from "../brain/usage.mjs";
 
 const JOBS_FILE = config.scheduler.jobsFile;
 
 // 「上次检查到的分钟」要落盘：
 //   · 同一分钟内服务重启 -> 读回来，不会把刚触发过的任务再打一遍
-//   · 重启恰好跨过触发分钟 -> 那一轮就错过了（早报这类内容，过点补发没有意义）
-// 之前只放内存里，重启即失忆 —— 实测重启并不罕见，08:00 触发后重启会推两遍。
+//   · lastTickMs 供 misfire 扫描定位「从哪里开始算错过」
 const STATE_FILE = join(dirname(JOBS_FILE), "scheduler-state.json");
 
-function loadLastKey() {
+function loadState() {
   try {
     const s = JSON.parse(readFileSync(STATE_FILE, "utf8"));
-    return typeof s.lastKey === "string" ? s.lastKey : null;
+    return {
+      lastKey: typeof s.lastKey === "string" ? s.lastKey : null,
+      lastTickMs: Number.isFinite(s.lastTickMs) ? s.lastTickMs : 0,
+    };
   } catch {
-    return null; // 不存在 / 损坏，都当「没有记录」
+    return { lastKey: null, lastTickMs: 0 }; // 不存在 / 损坏，都当「没有记录」
   }
 }
 
-function saveLastKey(key) {
+function saveState(lastKey, lastTickMs) {
   try {
-    writeFileSync(STATE_FILE, JSON.stringify({ lastKey: key }, null, 2) + "\n");
+    writeFileSync(
+      STATE_FILE,
+      JSON.stringify({ lastKey, lastTickMs }, null, 2) + "\n",
+    );
   } catch (e) {
     console.error(`[调度] 写状态文件失败: ${e.message}`);
   }
@@ -105,7 +118,24 @@ export function startScheduler() {
     );
   }
 
-  let lastKey = loadLastKey();
+  const boot = loadState();
+  let lastKey = boot.lastKey;
+  let lastTickMs = boot.lastTickMs;
+
+  // ── 补发：错过触发分钟的「时间型」任务 ──
+  // 只补最近一次（scanMissed 内部有窗口上限），带（补发）标记；
+  // 内容型任务（早报）没有 misfire 字段，默认跳过 —— 过期的早报没有价值。
+  if (lastTickMs && Date.now() - lastTickMs > 60_000) {
+    const missed = scanMissed(jobs, lastTickMs + 1, Date.now());
+    for (const [job, atMs] of missed) {
+      if (job.misfire !== "catchup") continue;
+      const at = new Date(atMs).toLocaleString("zh-CN", {
+        timeZone: "Asia/Shanghai",
+      });
+      console.log(`[调度] ⏰ 补发「${job.name}」（原定 ${at}，服务当时不在线）`);
+      fire(job, job.chatId ?? config.scheduler.defaultChatId, true);
+    }
+  }
 
   /** 热重载：文件变了就重新读 */
   function maybeReload() {
@@ -131,32 +161,43 @@ export function startScheduler() {
     const key = `${now.getFullYear()}/${now.getMonth()}/${now.getDate()} ${now.getHours()}:${now.getMinutes()}`;
     if (key === lastKey) return; // 同一分钟只检查一次（重启后靠状态文件续上）
     lastKey = key;
-    saveLastKey(key);
+    lastTickMs = Date.now();
+    saveState(lastKey, lastTickMs);
 
     for (const job of jobs) {
       if (!matches(job.cronParsed, now)) continue;
-
-      const chatId = job.chatId ?? config.scheduler.defaultChatId;
-      if (!chatId) {
-        console.error(`[调度] 「${job.name}」到点了，但没有 chatId`);
-        continue;
-      }
-
-      console.log(`[调度] ⏰ 触发「${job.name}」`);
-      fire(job, chatId).catch((e) =>
-        console.error(`[调度] 「${job.name}」执行失败：${e.message}`),
-      );
+      fire(job, job.chatId ?? config.scheduler.defaultChatId);
     }
   }
 
-  async function fire(job, chatId) {
-    const { answer } = await runAgent(job.prompt, {
+  function fire(job, chatId, missed = false) {
+    if (!chatId) {
+      console.error(`[调度] 「${job.name}」到点了，但没有 chatId`);
+      return;
+    }
+
+    // 成本闸门：超额后定时任务停推（用户直接发消息不受影响）
+    if (overLimit()) {
+      console.error(
+        `[调度] ⛔ 今日 token 额度已到（${usedTokens()}/${config.usage.dailyTokenLimit}），跳过「${job.name}」`,
+      );
+      noteBlocked();
+      return;
+    }
+
+    console.log(`[调度] ⏰ 触发「${job.name}」${missed ? "（补发）" : ""}`);
+    enqueueAgentJob({
       chatId,
+      text: job.prompt,
       announce: false,
-    });
-    emit("deliver", {
-      chatId,
-      text: `📅 ${job.name}\n\n${answer}`,
+      onDone: ({ answer }) => {
+        emit("deliver", {
+          chatId,
+          text: `📅 ${missed ? "（补发）" : ""}${job.name}\n\n${answer}`,
+        });
+      },
+      onError: (e) =>
+        console.error(`[调度] 「${job.name}」执行失败：${e.message}`),
     });
   }
 

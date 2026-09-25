@@ -16,7 +16,7 @@
 ## 0. 三十秒版本
 
 1. 代码在 GitHub：`https://github.com/Erfan817/personal-bot-demo`（**公开仓库**）
-2. 代码**跑在服务器上**，但服务器上的目录 **不是 git 仓库** —— 是 `scp` 拷过去的，**没有版本可回退**
+2. 代码**跑在服务器上**，服务器目录 2026-09-25 起**也是 git 仓库**（部署 = fetch + reset，可回滚）
 3. **真正的运行状态只在服务器上**：记忆数据库、定时任务清单、密钥 —— 本地文件夹里一个都没有
 4. 本地跑不了完整测试（`memory.test.mjs` 依赖原生 `better-sqlite3`），**验证必须去服务器**
 
@@ -26,8 +26,8 @@
 
 | | 本地 `erifane-bot/` | 服务器 `~/erifane-bot/` |
 |---|---|---|
-| **源码** | ✅ 有，且是 git 仓库 | ✅ 有，**但不是 git 仓库** |
-| **git 历史** | ✅ 3 个 commit | ❌ 无 |
+| **源码** | ✅ 有，且是 git 仓库 | ✅ 有，且是 git 仓库（2026-09-25 起，remote 指向 GitHub） |
+| **git 历史** | ✅ 完整 | ✅ 镜像自 origin/main（部署 = fetch + reset） |
 | `.env`（密钥） | ❌ 没有（故意的） | ✅ 有（5 个变量） |
 | `data/memory.db`（记忆） | ❌ 没有 | ✅ 有 |
 | `data/jobs.json`（任务清单） | ❌ 没有 | ✅ 有 |
@@ -119,8 +119,8 @@ Restart          = always
 | **定时任务** | `data/jobs.json` 只有 1 条：**「每日早报」`0 8 * * *`，`enabled: true`** ← 每天早上 8 点会真的推送 |
 | 心跳 | 最新一次约 **38 秒前**（阈值 300 秒）→ 正常 |
 | 告警 | 无 `data/ALERT`，失败计数 `0` → **健康** |
-| 备份 | 4 份（2 组 `memory-*.db` + `env-*`），保留上限 7 |
-| 测试 | **77 / 77 通过**，0 失败（2026-09-25 15:00 实测；新增内网拦截、事件总线、提醒任务用例后由 54 增至 77） |
+| 备份 | `~/erifane-backups/`（**项目目录之外**，全部 0600），保留上限 7 |
+| 测试 | **90 / 90 通过**（2026-09-25 实测；另外每次 push 由 GitHub Actions 跑全套 —— 数字有凭证） |
 | 项目文件数 | 61（不含 `node_modules`） |
 
 `data/` 目录实际内容：
@@ -130,25 +130,27 @@ data/
 ├── heartbeat               毫秒时间戳，服务每 60 秒写一次
 ├── healthcheck-fails       连续失败计数（root 所有，正常是 0）
 ├── jobs.json               ★ 真实任务清单（本地没有这个文件）
+├── scheduler-state.json    调度器触发记录（重启续上 + misfire 定位）
+├── usage.json              每日 token/成本累计（成本闸门用）
 ├── memory.db               记忆库主文件
 ├── memory.db-shm / -wal    SQLite WAL 模式配套文件
-└── backups/                备份（含明文密钥，见 §6）
+└── （备份已挪到 ~/erifane-backups/ —— 含明文密钥，见 §6）
 ```
 
 ---
 
 ## 4. 三个会让人误判的事实
 
-### ① 服务器上的目录不是 git 仓库 —— 没有版本可回退
+### ① ~~服务器上的目录不是 git 仓库~~ 已解决（2026-09-25）
 
-实测 `~/erifane-bot/.git` **不存在**。代码是用 `scp` 拷过去的。
+服务器 `~/erifane-bot` 现在是 git 仓库，remote 指向 GitHub。
+部署 = `git fetch origin && git reset --hard origin/main`；
+**回滚 = reset 到任意旧 commit**，一条命令。
 
-**后果**：
-- 在服务器上 `git log` / `git diff` / `git checkout` 全部不可用
-- 改坏了**没有撤销手段**（只能从本地重新 `scp` 覆盖）
-- 服务器上跑的到底是哪个 commit，**无从查证** —— 只能靠本地 git 记录推断
-
-**所以：动服务器上的文件之前，先备份。**
+**随之而来一条新纪律：不要在服务器上直接改文件。**
+服务器是仓库的镜像——直接改的东西下次 reset 就被冲掉，
+还会制造「说不清跑的是哪个版本」的新混乱。改代码走仓库：
+本地改 → push → 服务器 reset。
 
 ### ② 真实任务清单只在服务器上
 
@@ -192,7 +194,7 @@ cat ~/erifane-bot/data/heartbeat; date +%s%3N
 # ④ 有没有告警
 ls ~/erifane-bot/data/ALERT        # 报错=没有告警=健康
 
-# ⑤ 测试还过吗（应该是 77/77）
+# ⑤ 测试还过吗（应该是 90/90；CI 每次 push 也跑同一套）
 cd ~/erifane-bot && node --test tests/*.test.mjs
 
 # ⑥ 定时任务到底是什么
@@ -200,10 +202,14 @@ cat ~/erifane-bot/data/jobs.json
 
 # ⑦ 最近日志
 journalctl -u erifane-bot -n 50 --no-pager
+
+# ⑧ 备份还能恢复吗（每周演练一次，不用停服务）
+node ~/erifane-bot/scripts/restore.mjs --verify \
+  ~/erifane-backups/$(ls -t ~/erifane-backups | grep '^memory-' | head -n 1)
 ```
 
-**七步全过 = 你有了可复现的基线。**
-之后任何改动，都要能重新走完这七步。
+**八步全过 = 你有了可复现的基线。**
+之后任何改动，都要能重新走完这八步。
 
 ---
 
@@ -256,7 +262,7 @@ ssh erifane 'cat ~/erifane-bot/.env'
 | 路径 | 为什么会泄露 |
 |---|---|
 | 把 `.env` 放进项目文件夹，再把**整个文件夹**交给 Cursor / Claude Code | 这些工具会索引代码并**上传到它们的服务器**做 embedding —— 密钥跟着走，而且你收不到任何提示 |
-| 把 `data/backups/` 整个交出去 | 备份里含 `env-*` 文件 = **明文密钥快照**（`scripts/backup.mjs` 会连 `.env` 一起备份） |
+| 把备份目录整个交出去 | 备份里含 `env-*` = **明文密钥快照**。已挪到 `~/erifane-backups/`（项目之外）+ 全部 0600，但它仍是明文 —— 交出任何东西之前先看一眼 |
 
 ### 一个实际踩过的坑
 
@@ -272,7 +278,7 @@ ssh erifane 'cat ~/erifane-bot/.env'
 | 测试用 `node --test tests/*.test.mjs`（**glob 形式**） | 服务器 Node 22 不认目录形式，报 `Cannot find module '.../tests'`。**本地 Node 24 能跑，所以你不会发现** |
 | `memory.test.mjs` 只能去服务器跑 | 本地装不上原生 `better-sqlite3`（编译权限受限） |
 | 块注释里的 `*/` 必须写成 `*\/` | `*/` 会提前闭合注释 → `SyntaxError`（项目里踩过两次） |
-| 改完代码必须 `scp` + `systemctl restart` | 服务器不是 git 仓库，**`git pull` 不存在** |
+| 改完代码：本地 push → 服务器 `git fetch && git reset --hard origin/main` → `systemctl restart` | 服务器是仓库镜像；**直接在服务器上改文件会被下次 reset 冲掉** |
 | cron 表达式按**北京时间**算 | 服务器时区是 `Asia/Shanghai`，不是 UTC |
 | 改完跑 `npm run check`（批量 `node --check`） | 语法错会在服务器上才现形，服务起不来 |
 

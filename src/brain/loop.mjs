@@ -8,6 +8,10 @@
  *   announce = false          调度层触发 -> 只返回结果，不推过程
  *
  * 为什么分开：定时任务推给用户时，不需要"🔧 now({})"这些过程噪音。
+ *
+ * ★ 所有事件都带 chatId：路由是渠道层的事，但标识必须由源头带上。
+ *   事件本身不带会话、只靠「当前正在服务谁」的模块级变量来猜 ——
+ *   两个渠道一接进来就必然串话。
  */
 import { Agent } from "@earendil-works/pi-agent-core";
 import { config } from "../config.mjs";
@@ -15,10 +19,11 @@ import { emit } from "../events.mjs";
 import { models, resolveModel } from "./models.mjs";
 import { agentTools, isAllowed } from "../tools/index.mjs";
 import { loadRecent, saveMessage } from "../memory/index.mjs";
+import { recordRun } from "./usage.mjs";
 
 /**
  * @param {string} userText
- * @param {{chatId?: string, announce?: boolean}} opts
+ * @param {{chatId?: string, announce?: boolean, timeoutMs?: number}} opts
  */
 export async function runAgent(
   userText,
@@ -33,9 +38,11 @@ export async function runAgent(
         ? config.agent.timeoutMs
         : 120_000;
   let turn = 0;
+  let toolCount = 0;
   let answer = null;
   let timedOut = false;
   const pending = new Map(); // toolCallId -> { name, args }
+  const t0 = Date.now();
 
   // ① 载入历史
   const history = loadRecent(chatId, config.memory.historyLimit);
@@ -64,7 +71,7 @@ export async function runAgent(
     switch (event.type) {
       case "turn_start":
         turn += 1;
-        if (announce) emit("step", turn);
+        if (announce) emit("step", { chatId, n: turn });
         break;
 
       case "tool_execution_start":
@@ -75,6 +82,7 @@ export async function runAgent(
         break;
 
       case "tool_execution_end": {
+        toolCount += 1;
         const info = pending.get(event.toolCallId) ?? {
           name: event.toolName,
           args: {},
@@ -83,6 +91,7 @@ export async function runAgent(
 
         if (announce) {
           emit("tool_call", {
+            chatId,
             name: info.name,
             args: info.args,
             result:
@@ -114,7 +123,7 @@ export async function runAgent(
           }
         }
 
-        if (announce) emit("answer", answer);
+        if (announce) emit("answer", { chatId, text: answer });
         break;
       }
     }
@@ -139,14 +148,41 @@ export async function runAgent(
   // 万一 agent_end 没发（理论上不可能），也保证用户收到一条回音
   if (!answer && timedOut) {
     answer = `⏱️ 这条消息处理超过 ${Math.round(limit / 1000)} 秒仍未完成，已中止。请重试，或换个问法。`;
-    if (announce) emit("answer", answer);
+    if (announce) emit("answer", { chatId, text: answer });
   }
 
-  // ② 落盘
+  // ② 结构化运行日志 + 用量累计
+  // 一行看清每轮的形态与成本：会话、轮数、工具数、耗时、tokens、花费。
+  // 「心跳正常但每轮很慢」这类问题，从此有数据可查；cost 也是成本看板的地基。
+  const usage = sumUsage(agent.state.messages);
+  recordRun(usage);
+  console.log(
+    `[run] chatId=${chatId} turns=${turn} tools=${toolCount}` +
+      ` ms=${Date.now() - t0} in=${usage.input} out=${usage.output}` +
+      ` cost=$${usage.cost.toFixed(4)}` +
+      (timedOut ? " timeout" : agent.state.errorMessage ? " error" : " ok"),
+  );
+
+  // ③ 落盘
   saveMessage(chatId, "user", userText);
   if (answer) saveMessage(chatId, "assistant", answer);
 
   return { answer, messages: agent.state.messages };
+}
+
+/** 把框架消息里的 usage 累加起来（字段带兜底，别让统计本身炸掉主流程） */
+function sumUsage(messages) {
+  let input = 0;
+  let output = 0;
+  let cost = 0;
+  for (const m of messages) {
+    const u = m?.usage;
+    if (!u) continue;
+    input += Number(u.input ?? 0) || 0;
+    output += Number(u.output ?? 0) || 0;
+    cost += Number(u.cost?.total ?? 0) || 0;
+  }
+  return { input, output, cost };
 }
 
 /**
