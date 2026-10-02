@@ -13,7 +13,7 @@ After=erifane-bot.service
 
 [Service]
 Type=oneshot
-ExecStart=/home/azureuser/erifane-bot/scripts/healthcheck.sh
+ExecStart=/home/ubuntu/erifane-bot/scripts/healthcheck.sh
 
 # 单次执行不该跑太久
 TimeoutStartSec=60

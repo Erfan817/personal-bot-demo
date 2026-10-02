@@ -31,7 +31,10 @@
 
 set -u
 
-BASE="/home/azureuser/erifane-bot"
+# BASE 从脚本自身位置推导（本文件在 <项目>/scripts/ 下）——
+# 换用户 / 换服务器部署时不用再改这里。
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+BASE="$(dirname "$SCRIPT_DIR")"
 HEARTBEAT="$BASE/data/heartbeat"
 STATE_DIR="$BASE/data"
 FAIL_FILE="$STATE_DIR/healthcheck-fails"

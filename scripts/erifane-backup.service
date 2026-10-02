@@ -3,7 +3,7 @@
 # ═══════════════════════════════════════════════════════════
 # 由 erifane-backup.timer 触发。
 #
-# 以 azureuser 运行：数据库文件属于它，而且备份不需要 root。
+# 以部署用户（ubuntu）运行：数据库文件属于它，而且备份不需要 root。
 # ═══════════════════════════════════════════════════════════
 
 [Unit]
@@ -11,9 +11,9 @@ Description=Erifane Bot daily backup
 
 [Service]
 Type=oneshot
-User=azureuser
-Group=azureuser
-WorkingDirectory=/home/azureuser/erifane-bot
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/erifane-bot
 ExecStart=/usr/bin/node scripts/backup.mjs
 
 # 备份不该跑太久

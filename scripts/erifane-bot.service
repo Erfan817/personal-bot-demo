@@ -19,10 +19,10 @@ Type=simple
 
 # ── 用普通用户跑，不用 root ──
 # 这是最小权限原则：agent 有工具能力，不该以 root 身份活着。
-User=azureuser
-Group=azureuser
+User=ubuntu
+Group=ubuntu
 
-WorkingDirectory=/home/azureuser/erifane-bot
+WorkingDirectory=/home/ubuntu/erifane-bot
 
 # 渠道用环境变量指定（其余配置在 .env 里，由 config.mjs 读取）
 Environment=CHANNEL=feishu
