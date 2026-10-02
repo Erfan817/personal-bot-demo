@@ -509,6 +509,27 @@ DuckDuckGo 对数据中心 IP 会返回人机验证页，**而页面里没有结
 > 我在这份 README 里写了这条坑，然后十分钟后又踩了一次 ——
 > 所以真正的解法不是记性更好，而是**每次改完都跑 `npm run check`**。
 
+### ⑨ FTS5 删索引有两种姿势，用错一种直接报错
+
+给记忆卡做「更新后同步索引」时，想当然用了 FTS5 的命令式删除 ——
+结果 3 个测试全挂在 `SQLITE_ERROR`：
+
+```javascript
+// ❌ 这种 'delete' 命令形式只适用于 contentless / external-content 表，
+//    在普通（内容内储）FTS5 表上直接报 SQLITE_ERROR
+db.prepare(
+  "INSERT INTO memories_fts(memories_fts, rowid, content, keywords) VALUES ('delete', ?, ?, ?)",
+).run(id, content, keywords);
+
+// ✅ 普通 FTS5 表按 rowid DELETE 就行
+db.prepare("DELETE FROM memories_fts WHERE rowid = ?").run(id);
+```
+
+**教训**：
+- 同一个需求在同一套 API 里常有**多套语义**（命令式 vs 普通 SQL），"看起来更高级的那套"未必适用于你手里的表类型；
+- 更扎心的是：**messages 层的 `clearChat` 早就在用正确姿势了** ——
+  改一个自己没碰过的模块前，先看看这个模块里已经验证过的写法，再动手。
+
 ---
 
 ## 技术栈
