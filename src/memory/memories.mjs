@@ -15,7 +15,8 @@
  * 这是 messages 档案层做不到的事（那里只有原话）。
  *
  * ⚠️ 继承 db.mjs 里那条纪律：FTS 表的 rowid 显式 = memories.id，
- *    删改时用 FTS5 的 'delete' 命令配【原值】同步，永远不留幽灵索引。
+ *    删改时同步删索引行（普通 FTS5 表按 rowid DELETE 即可），
+ *    永远不留幽灵索引。
  */
 import { db } from "./db.mjs";
 
@@ -31,11 +32,12 @@ function syncFtsAdd(id, content, keywords) {
   ).run(id, content, keywords);
 }
 
-function syncFtsRemove(id, content, keywords) {
-  // FTS5 删除不走 DELETE WHERE，要用 'delete' 命令 + 原值
-  db.prepare(
-    "INSERT INTO memories_fts(memories_fts, rowid, content, keywords) VALUES ('delete', ?, ?, ?)",
-  ).run(id, content, keywords);
+function syncFtsRemove(id) {
+  // 普通内容存储型 FTS5 表：直接按 rowid DELETE 就行。
+  // ⚠️ 不走 `INSERT ... VALUES('delete', ...)` 那种命令形式 ——
+  // 它只用于 contentless / external-content 表，普通表上直接报
+  // SQLITE_ERROR（实测踩过）。messages 层的 clearChat 也是这么删的。
+  db.prepare("DELETE FROM memories_fts WHERE rowid = ?").run(id);
 }
 
 /** 活跃卡里找同内容卡：先精确匹配，再 FTS 短语匹配（内容 ≥3 字时） */
@@ -94,7 +96,7 @@ export function addMemory({
               updated_at = ?, source_msg_id = COALESCE(?, source_msg_id)
         WHERE id = ?`,
     ).run(content, topic, kw, imp, now, sourceMsgId, dup.id);
-    syncFtsRemove(dup.id, dup.content, dup.keywords);
+    syncFtsRemove(dup.id);
     syncFtsAdd(dup.id, content, kw);
     return { id: dup.id, updated: true };
   }
@@ -199,7 +201,7 @@ export function archiveMemory(id) {
 export function removeMemory(id) {
   const row = getMemory(id);
   if (!row) return false;
-  syncFtsRemove(row.id, row.content, row.keywords);
+  syncFtsRemove(row.id);
   db.prepare("DELETE FROM memories WHERE id = ?").run(row.id);
   return true;
 }
