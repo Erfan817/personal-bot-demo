@@ -46,4 +46,29 @@ db.exec(`
   -- 注意：插入时会显式指定 rowid = messages.id
   CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts
     USING fts5(content, chat_id UNINDEXED, tokenize='trigram');
+
+  -- 记忆卡：结构化长期记忆
+  -- 和 messages 的分工：messages 是【档案】（对话原文，只增不减）；
+  -- memories 是【卡片】（模型提炼后的意思 + 检索词 + 主题，可增改归档）。
+  -- topic 就是「卡名」（健身 / 学习 / 饮食…），检索和注入都按它组织。
+  CREATE TABLE IF NOT EXISTS memories (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    chat_id      TEXT    NOT NULL,
+    topic        TEXT    NOT NULL DEFAULT '日常',
+    content      TEXT    NOT NULL,
+    keywords     TEXT    NOT NULL DEFAULT '',
+    importance   INTEGER NOT NULL DEFAULT 3,
+    status       TEXT    NOT NULL DEFAULT 'active',
+    source_msg_id INTEGER,
+    created_at   INTEGER NOT NULL,
+    updated_at   INTEGER NOT NULL,
+    last_used_at INTEGER
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_memories_topic
+    ON memories(topic, status);
+
+  -- 记忆卡的全文检索：content + keywords 都进索引（rowid = memories.id）
+  CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts
+    USING fts5(content, keywords, tokenize='trigram');
 `);

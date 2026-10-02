@@ -18,7 +18,7 @@ import { config } from "../config.mjs";
 import { emit } from "../events.mjs";
 import { models, resolveModel } from "./models.mjs";
 import { agentTools, isAllowed } from "../tools/index.mjs";
-import { loadRecent, saveMessage } from "../memory/index.mjs";
+import { loadRecent, saveMessage, coreMemories } from "../memory/index.mjs";
 import { recordRun } from "./usage.mjs";
 
 /**
@@ -185,10 +185,13 @@ function sumUsage(messages) {
   return { input, output, cost };
 }
 
+/** 核心记忆卡注入条数：一行一条，控制在几百 token 内 */
+const CORE_MEMORY_LIMIT = 10;
+
 /**
- * 把历史对话拼进 system prompt
+ * 把历史对话和核心记忆卡拼进 system prompt
  * ═══════════════════════════════════════════════════
- * 为什么【不】塞进 initialState.messages：
+ * 为什么【不】把历史塞进 initialState.messages：
  *
  *   框架内部的 assistant 消息除 role/content 外还带
  *   provider / model / usage / stopReason 等字段。
@@ -200,16 +203,29 @@ function sumUsage(messages) {
  *   · 不依赖框架内部格式
  *   · 以后换框架也不用改
  *   · 好调试 —— 直接能看见喂给模型的是什么
+ *
+ * 记忆卡为什么也拼在这里：它是「主人是谁」的常量背景（偏好、身份、
+ * 计划），每轮都在场就不用模型每次都想起来去搜；更多细节留给
+ * memory 工具的 search 按主题取 —— 常量注入 + 按需检索的分工。
  */
 function buildSystemPrompt(history) {
-  const base = config.agent.systemPrompt;
-  if (!history.length) return base;
+  let prompt = config.agent.systemPrompt;
+
+  const core = coreMemories(CORE_MEMORY_LIMIT);
+  if (core.length) {
+    prompt +=
+      "\n\n【主人的长期记忆卡（按主题维护；需要更多细节用 memory 工具的 search 查，别凭印象编）】\n" +
+      core.map((m) => `· [${m.topic}] ${m.content}`).join("\n") +
+      "\n【记忆卡结束】";
+  }
+
+  if (!history.length) return prompt;
 
   const lines = history
     .map((m) => `${m.role === "user" ? "用户" : "我"}：${m.content}`)
     .join("\n");
 
-  return `${base}
+  return `${prompt}
 
 【以下是你们之前的部分对话，按时间顺序，供你接上下文用】
 ${lines}

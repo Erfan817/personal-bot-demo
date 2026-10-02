@@ -129,7 +129,7 @@ CHANNEL=feishu node src/index.mjs
 | 能力 | 说明 | 谁实现的 |
 |---|---|---|
 | **多端派活** | 飞书长连接，手机 / 电脑 / 平板天然同步，会话上下文连续 | 长连接是飞书 SDK 提供；**渠道适配、3 秒约束下的异步化是自己写的** |
-| **长期记忆** | SQLite + FTS5 全文检索，跨会话记得住，**能主动去翻旧账** | **自己写的**（含中文分词处理、索引同步） |
+| **长期记忆** | **结构化记忆卡（按主题分卡）+ 对话档案两层**：聊到健身就从健身卡里说；存卡时模型顺手写同义关键词，"橘猫召不回宠物"在卡层被治好；核心卡每轮注入上下文 | **自己写的**（含中文分词处理、索引同步、写时去重） |
 | **定时主动推送** | cron 推报告；**agent 能用 `remind_me` 自建 / 查看 / 删除提醒**；错过的提醒按策略补发 | **cron 解析器、调度器、misfire 策略、`deliver` 事件都是自己写的** |
 | **联网** | 搜索 + 抓网页，会判断信源可靠度、标注出处；**内网地址拦截 + 数据边界标记** | **工具是自己写的**；搜索走 DuckDuckGo HTML 或 Brave API |
 | **可换大脑** | 换模型只改 `.env` 一行 | ⚠️ **provider 集合（44 个）来自 `pi-ai`**。本项目做的是"把它接进分层结构" |
@@ -419,6 +419,7 @@ npm run check   # 对所有 .mjs 跑 node --check
 | `usage.test.mjs` | 用量累计 / 日额度闸门 | 跨天开新账；告警当天只写一次 |
 | `misfire.test.mjs` | 错过触发分钟的扫描 | 已处理过的分钟不算错过；只补最近一次 |
 | `memory.test.mjs` | 存取 / 索引同步 / 会话隔离 | **含"已知局限"的固化断言** |
+| `memory_card.test.mjs` | 记忆卡：去重更新 / 主题检索 / 删除同步 | **含与档案层"同义召不回"的正反对照断言** |
 
 **CI**：每次 push / PR，GitHub Actions 跑 `npm run check` + 全部测试
 （Node 22 和 24 两个版本，见 `.github/workflows/test.yml`）——
@@ -573,6 +574,7 @@ erifane-bot/
 │   │   ├── now.mjs                 当前时间
 │   │   ├── history_search.mjs      检索历史对话
 │   │   ├── remind_me.mjs           ★ 自建定时提醒（create/list/remove）
+│   │   ├── memory.mjs              ★ 长期记忆卡（add/list/search/remove）
 │   │   ├── web_search.mjs          搜索（DDG / Brave 双通道）
 │   │   ├── web_fetch.mjs           抓网页（带 SSRF 拦截）
 │   │   └── lib/                    ★ 纯函数（离线可单测）
@@ -583,8 +585,9 @@ erifane-bot/
 │   │       └── reminder.mjs        提醒任务增删 + cron 人话化
 │   ├── memory/
 │   │   ├── db.mjs                  SQLite + FTS5
-│   │   ├── messages.mjs            会话历史
-│   │   └── search.mjs              长期检索
+│   │   ├── messages.mjs            会话历史（档案层）
+│   │   ├── memories.mjs            ★ 记忆卡（结构化长期记忆）
+│   │   └── search.mjs              长期检索（档案层）
 │   └── scheduler/
 │       ├── cron.mjs                自己写的 cron 解析器
 │       ├── misfire.mjs             错过触发分钟的扫描
@@ -636,7 +639,7 @@ QQ 渠道（OneBot 11）因此随时可以加。
 ## 待办 / 下一步
 
 - [ ] 外部告警通道（把 `data/ALERT` / `data/COST_ALERT` 推到飞书/webhook）
-- [ ] 记忆层加语义召回（embedding + 混合排序）—— 见「设计决策 3」
+- [ ] 记忆档案层加语义召回（embedding + 混合排序）—— 记忆卡一期已上线（关键词补齐 + 主题分卡），embedding 视使用情况再上；见「设计决策 3」
 - [ ] 飞书渠道的集成测试（单元测试已有 CI，链路 E2E 仍靠人工）
 - [ ] QQ 渠道（OneBot 11 反向 WebSocket）—— 事件已带 chatId，随时可加
 - [ ] 流式输出接到飞书（打字机效果）
