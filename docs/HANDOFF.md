@@ -5,8 +5,14 @@
 > 这份文档不讲「项目是什么」（→ [`README.md`](../README.md)），也不讲「为什么这样设计」（→ [`DESIGN.md`](DESIGN.md)）。
 > 它只讲那两份文档里都没有的东西：**现在实际是什么状态，以及怎么在没有上下文的情况下接着干。**
 
-**快照采集时间**：2026-09-25 13:41 CST
-下面所有「当前值」都是这一刻在**真实服务器上实测**的，不是设计意图。时间久了请用文末的命令重新采集。
+**快照采集时间**：2026-10-02 23:00 CST（服务器迁移当天实测）
+
+> 🚚 **2026-10-02 已整机迁移**：Azure Korea Central（2 vCPU / 1 GiB，学生免费套餐）
+> → **腾讯云轻量应用服务器（4 核 / 4 GiB，Ubuntu 24.04）**。
+> 迁移路径：仓库 push → 新机 clone + npm install + 测试 90/90 → 旧机停服务做最终备份
+> → `.env` / `memory.db`（走 `restore.mjs`）/ 调度状态经本机中转 → systemd 重装启动。
+> 旧机三个单元已全部 `disable --now`，但**数据和备份原样留在旧机上**，没删任何东西。
+> 时间久了请用文末的命令重新采集。
 
 > ⚠️ **本仓库是公开的。** 服务器 IP、用户名、私钥、`.env` 内容**一律不要提交**。
 > 本文用 `<占位符>` 表示这类信息，需要时向项目所有者索取。
@@ -43,46 +49,48 @@
 
 ### 2.1 基本信息（2026-09-25 实测）
 
+### 2.1 当前服务器（2026-10-02 迁移后）
+
 | 项 | 值 |
 |---|---|
-| 主机名 | `Erifane` |
-| 云 / 区域 | Azure · Korea Central |
-| 规格 | `Standard_B2ats_v2` — **2 vCPU / 1 GiB 内存** + 8 GB swap |
-| OS | Ubuntu 22.04（内核 `6.8.0-1068-azure`） |
-| 磁盘 | 62 GB，已用 12 GB（20%） |
-| Node | `v22.23.3` · `/usr/bin/node` |
+| 主机名 | `VM-0-6-ubuntu` |
+| 云 / 区域 | 腾讯云轻量应用服务器（公网 IP 见本机 `~/.ssh/config` 的 `Host lh`，纪律：不写进仓库） |
+| 规格 | **4 核 / 4 GiB** |
+| OS | Ubuntu 24.04 |
+| Node | `v22.23.3`（NodeSource 22.x）· `/usr/bin/node` |
 | 时区 | `Asia/Shanghai` —— **cron 表达式按北京时间算，不是 UTC** |
-| 项目目录 | `/home/azureuser/erifane-bot` |
-| 登录方式 | **仅 SSH 密钥**（密码登录已关闭） |
-| 成本 | $0/月（Azure for Students 免费额度） |
+| 项目目录 | `/home/ubuntu/erifane-bot` |
+| 登录方式 | SSH 密钥（`~/.ssh/id_ed25519`） |
+| 出站网络 | GitHub / npm / DeepSeek / 飞书 / Brave API 直连可达；**DuckDuckGo 被墙**（搜索必须配 `BRAVE_API_KEY`） |
 
-> ⚠️ **只有 1 GiB 内存，这不是笔误。**
-> Azure 学生免费套餐里那几个 SKU（B1s / B2pts_v2 / B2ats_v2）**全都是 1 GiB**，没有更大且免费的。
-> `npm install`、编译原生 `better-sqlite3` 时会很吃紧 —— 那 8 GB swap 就是为这个准备的。
+**旧服务器（Azure，已停用、未销毁）**：`azureuser@<旧 IP>`，密钥 `~/.ssh/Erifane`（RSA）。
+三个 systemd 单元已全部 `disable --now`；`~/erifane-backups/` 和 `~/erifane-bot/data/` 原样保留。
+**回滚** = 旧机上 `sudo systemctl enable --now erifane-bot erifane-healthcheck.timer erifane-backup.timer`。
+⚠️ 但**不要两台同时跑**：同一飞书应用的两条长连接会分流事件，表现就是"时灵时不灵"。
 
 ### 2.2 怎么连
 
 ```bash
-ssh erifane          # 别名定义在本机 ~/.ssh/config
+ssh lh               # 新服务器（腾讯云轻量），别名定义在本机 ~/.ssh/config
 ```
 
 本机 `~/.ssh/config` 里的样子（换机器要重建）：
 
 ```
-Host erifane
-    HostName <服务器公网 IP>
-    User <用户名>
+Host lh
+    HostName <新服务器公网 IP>
+    User ubuntu
     IdentityFile ~/.ssh/id_ed25519
-    ServerAliveInterval 30
-    ServerAliveCountMax 3
 ```
 
-> 💡 **本机已经有这份 config 的话，公网 IP 和用户名直接就能看到**：
-> `Get-Content $env:USERPROFILE\.ssh\config`（Windows）或 `cat ~/.ssh/config`（Linux/macOS）。
-> **只有私钥不是"查一下就有"的** —— 见 §6.2。
->
+旧服务器没有别名，用：
+
+```bash
+ssh -i ~/.ssh/Erifane azureuser@<旧服务器 IP>
+```
+
 > 📌 `README.md` 的部署示例里写的是 `ssh server` —— 那是**占位别名**。
-> 本机实际使用的别名是 `erifane`。看到 `server` 请自行替换。
+> 本机实际使用的别名是 `lh`。看到 `server` 请自行替换。
 
 ### 2.3 五个 systemd 单元
 
@@ -103,21 +111,21 @@ Host erifane
 ### 2.4 主服务的实际启动配置（实测）
 
 ```
-WorkingDirectory = /home/azureuser/erifane-bot
+WorkingDirectory = /home/ubuntu/erifane-bot
 ExecStart        = /usr/bin/node src/index.mjs
 Restart          = always
 ```
 
 ---
 
-## 3. 当前状态快照（2026-09-25 13:41 CST）
+## 3. 当前状态快照（2026-10-02 23:00 CST · 迁移当天）
 
 | 项 | 实测值 |
 |---|---|
 | 服务 | `active`，本轮启动于 `2026-09-25 13:23:44 CST` |
 | 配置文件 | `.env` 只有 5 个变量（见 §6） |
-| **定时任务** | `data/jobs.json` 只有 1 条：**「每日早报」`0 8 * * *`，`enabled: true`** ← 每天早上 8 点会真的推送 |
-| 心跳 | 最新一次约 **38 秒前**（阈值 300 秒）→ 正常 |
+| **定时任务** | `data/jobs.json` 为 **`[]`（0 条）** —— 早报任务在迁移前已被删除（2026-09-25 时还有 1 条） |
+| 心跳 | 每 60 秒写一次；时效检查命令见 §5 ③（阈值 300 秒） |
 | 告警 | 无 `data/ALERT`，失败计数 `0` → **健康** |
 | 备份 | `~/erifane-backups/`（**项目目录之外**，全部 0600），保留上限 7 |
 | 测试 | **90 / 90 通过**（2026-09-25 实测；另外每次 push 由 GitHub Actions 跑全套 —— 数字有凭证） |
@@ -183,7 +191,7 @@ cd <项目目录>
 npm install
 
 # ① 连上
-ssh erifane
+ssh lh
 
 # ② 服务活着吗
 systemctl is-active erifane-bot
@@ -237,7 +245,7 @@ SCHEDULE_CHAT_ID       # 定时推送目标
 | 服务器公网 IP | 本机 `~/.ssh/config`；或 Azure Portal；或在服务器上 `curl -s ifconfig.me` | ✅ 能 |
 | 用户名 | 本机 `~/.ssh/config`；或在服务器上 `whoami` | ✅ 能 |
 | **`.env` 的 5 个值** | **服务器 `~/erifane-bot/.env`** | ✅ 能 —— 有 SSH 权限就直接 `cat` |
-| **SSH 私钥 `id_ed25519`** | **只在本机 `~/.ssh/`**，服务器上**没有** | ❌ **不能 —— 必须所有者主动提供** |
+| **SSH 私钥（两把，都只在本机 `~/.ssh/`）** | `id_ed25519` → 新服务器（腾讯云）；`Erifane`（RSA）→ 旧服务器（Azure）。服务器上**都没有**私钥 | ❌ **不能 —— 必须所有者主动提供** |
 
 > 实测：服务器 `~/.ssh/` 里**只有 `authorized_keys`（公钥）**，没有私钥。
 > 公钥推不出私钥 —— 所以拿不到私钥就进不了服务器。
@@ -254,7 +262,7 @@ SCHEDULE_CHAT_ID       # 定时推送目标
 照 `.env.example` 自己建 `.env`，值从服务器上取：
 
 ```bash
-ssh erifane 'cat ~/erifane-bot/.env'
+ssh lh 'cat ~/erifane-bot/.env'
 ```
 
 ### ⚠️ 两个必须避开的泄露路径
@@ -301,8 +309,11 @@ ssh erifane 'cat ~/erifane-bot/.env'
 
 | 位置 | 问题 |
 |---|---|
-| `README.md` 部署示例 | 用 `ssh server` 占位，本机实际别名是 `erifane` |
-| `scripts/healthcheck.sh` | `BASE` 是**硬编码绝对路径** `/home/azureuser/erifane-bot` —— 换用户或换路径必须改 |
+| `README.md` 部署示例 | 用 `ssh server` 占位，本机实际别名是 `lh` |
+
+> ✅ 2026-10-02 随迁移修复（commit `0f7bc7b`）：`scripts/healthcheck.sh` 的 `BASE`
+> 原是硬编码绝对路径 `/home/azureuser/erifane-bot`，现改为**从脚本自身位置推导**——
+> 换用户 / 换服务器不用再改；systemd 单元模板里的用户也同步改成了 `ubuntu`。
 
 ---
 
@@ -338,5 +349,5 @@ systemctl list-timers 'erifane-*' --no-pager
 echo ===== TESTS =====
 cd ~/erifane-bot && node --test tests/*.test.mjs 2>&1 | tail -n 12
 '@
-ssh erifane $remote
+ssh lh $remote
 ```
