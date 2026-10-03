@@ -20,7 +20,7 @@
 import * as Lark from "@larksuiteoapi/node-sdk";
 import { on } from "../events.mjs";
 import { config } from "../config.mjs";
-import { admit, shapeReply, isConfigured } from "../gateway/index.mjs";
+import { admit, shapeReply, toPlainText, isConfigured } from "../gateway/index.mjs";
 import { enqueueAgentJob } from "../brain/queue.mjs";
 
 export function startFeishu() {
@@ -116,9 +116,9 @@ export function startFeishu() {
   });
 }
 
-/** 出站闸门：切开过长回复，逐条发送 */
+/** 出站闸门：去 Markdown → 切开过长回复，逐条发送 */
 async function deliver(client, chatId, text) {
-  for (const piece of shapeReply(text)) {
+  for (const piece of shapeReply(toPlainText(text))) {
     try {
       await client.im.v1.message.create({
         params: { receive_id_type: "chat_id" },

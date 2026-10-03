@@ -10,6 +10,7 @@
  */
 import { runAgent } from "../brain/loop.mjs";
 import { on } from "../events.mjs";
+import { toPlainText } from "../gateway/outbound.mjs";
 
 export function startCli() {
   // ── 订阅大脑的事件（这一步就是「渠道」的全部工作）──
@@ -21,11 +22,11 @@ export function startCli() {
     console.log(`   ↳ ${result}`);
   });
 
-  on("answer", ({ text }) => console.log(`\n🤖 ${text}`));
+  on("answer", ({ text }) => console.log(`\n🤖 ${toPlainText(text)}`));
 
   // 调度层的定时推送（cli 模式跑完就退出，这里一般不会触发；
   // 留着是为了让"渠道层订阅 deliver"这件事在两种渠道里保持一致）
-  on("deliver", ({ text }) => console.log(`\n📅 ${text}`));
+  on("deliver", ({ text }) => console.log(`\n📅 ${toPlainText(text)}`));
 
   // ── 把输入交给大脑 ──
   const input = process.argv.slice(2).join(" ") || "帮我算一下 123 * 456";
