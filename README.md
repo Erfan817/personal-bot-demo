@@ -422,6 +422,7 @@ npm run check   # 对所有 .mjs 跑 node --check
 | `memory.test.mjs` | 存取 / 索引同步 / 会话隔离 | **含"已知局限"的固化断言** |
 | `memory_card.test.mjs` | 记忆卡：去重更新 / 主题检索 / 删除同步 | **含与档案层"同义召不回"的正反对照断言** |
 | `mcp_bridge.test.mjs` | MCP 桥：allow 过滤 / 命名清洗 / 结果透传 | 用内存传输伪造 MCP 服务器，离线可跑 |
+| `video_lib.test.mjs` | 视频转写：BV 解析 / 短链跳转 / Cookie 拼装 | 短链跳转用注入的假 fetch 测，不碰真网络 |
 
 **CI**：每次 push / PR，GitHub Actions 跑 `npm run check` + 全部测试
 （Node 22 和 24 两个版本，见 `.github/workflows/test.yml`）——
@@ -599,6 +600,7 @@ erifane-bot/
 │   │   ├── remind_me.mjs           ★ 自建定时提醒（create/list/remove）
 │   │   ├── memory.mjs              ★ 长期记忆卡（add/list/search/remove）
 │   │   ├── mcp.mjs                 ★ MCP 桥（外部工具服务器 → 白名单）
+│   │   ├── video_transcribe.mjs    ★ 视频音频转写（无字幕兜底）
 │   │   ├── web_search.mjs          搜索（DDG / Brave 双通道）
 │   │   ├── web_fetch.mjs           抓网页（带 SSRF 拦截）
 │   │   └── lib/                    ★ 纯函数（离线可单测）
@@ -606,6 +608,7 @@ erifane-bot/
 │   │       ├── search-parse.mjs    结果解析 + 验证页识别
 │   │       ├── net.mjs             内网地址拦截（SSRF）
 │   │       ├── boundary.mjs        外部内容数据边界
+│   │       ├── video.mjs           视频转写纯函数库（BV 解析 / Cookie 拼装）
 │   │       └── reminder.mjs        提醒任务增删 + cron 人话化
 │   ├── memory/
 │   │   ├── db.mjs                  SQLite + FTS5

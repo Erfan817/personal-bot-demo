@@ -13,9 +13,10 @@ import webSearch from "./web_search.mjs";
 import webFetch from "./web_fetch.mjs";
 import remindMe from "./remind_me.mjs";
 import memory from "./memory.mjs";
+import videoTranscribe from "./video_transcribe.mjs";
 import { loadMcpTools } from "./mcp.mjs";
 
-const REGISTRY = [calc, now, historySearch, webSearch, webFetch, remindMe, memory];
+const REGISTRY = [calc, now, historySearch, webSearch, webFetch, remindMe, memory, videoTranscribe];
 
 // MCP 桥接工具在进程启动时拉起（起不来只降级，不影响原生工具）
 const mcpTools = await loadMcpTools();
