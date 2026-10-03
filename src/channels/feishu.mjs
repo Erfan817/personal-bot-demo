@@ -36,21 +36,13 @@ export function startFeishu() {
   }
 
   // ══════ 出站 ①：大脑事件 -> 按 chatId 路由 ══════
-  // 每个会话一份工具过程日志；answer 到达时拼上去一起发，然后清掉
-  const toolLogs = new Map(); // chatId -> string[]
-
-  on("tool_call", ({ chatId, name, args, result }) => {
-    const log = toolLogs.get(chatId) ?? [];
-    log.push(`🔧 ${name}(${JSON.stringify(args)})\n   ↳ ${result}`);
-    toolLogs.set(chatId, log);
-  });
+  // ★ 只发最终回答，不发工具过程 —— 用户要的是结论不是原料。
+  //   （工具过程事件仍然会发，CLI 渠道用它调试；哪天想在飞书里
+  //     看过程，把 tool_call 的订阅加回来即可。）
 
   on("answer", async ({ chatId, text }) => {
-    const lines = toolLogs.get(chatId) ?? [];
-    toolLogs.delete(chatId);
-    const body = [...lines, "", text].join("\n").trim();
-    if (!chatId || !body) return;
-    await deliver(client, chatId, body);
+    if (!chatId || !text?.trim()) return;
+    await deliver(client, chatId, text);
   });
 
   // ══════ 出站 ②：调度层定时推送 -> 指定会话 ══════
