@@ -223,7 +223,7 @@ node ~/erifane-bot/scripts/restore.mjs --verify \
 
 ## 6. 密钥与访问权限
 
-### 6.1 服务器 `.env` 里实际存在的变量（只有这 7 个）
+### 6.1 服务器 `.env` 里实际存在的变量（只有这 8 个）
 
 ```
 DEEPSEEK_API_KEY
@@ -233,6 +233,7 @@ ALLOWED_USERS          # 逗号分隔的 open_id 白名单；留空 = 拒绝所�
 SCHEDULE_CHAT_ID       # 定时推送目标
 MCP_SERVERS            # MCP 桥接配置（B站工具服务器，见 §8）
 SILICONFLOW_API_KEY    # 视频转写（video_transcribe）：无字幕视频的音频转文字兜底
+APP_API_TOKEN          # 自建 App 网关（PWA 手机端），只听 127.0.0.1:8787
 ```
 
 **其余全部没设**，走 `.env.example` 里的默认值：

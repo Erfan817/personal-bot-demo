@@ -585,7 +585,9 @@ erifane-bot/
 │   │   └── usage.mjs               用量累计 + 日额度闸门
 │   ├── channels/
 │   │   ├── cli.mjs                 命令行渠道
-│   │   └── feishu.mjs              飞书渠道（按 chatId 路由）
+│   │   ├── feishu.mjs              飞书渠道（按 chatId 路由）
+│   │   ├── api.mjs                 ★ 自建 App 网关（Token + SSE + PWA 页）
+│   │   └── app.html                手机聊天页（PWA，加到主屏幕即装）
 │   ├── gateway/
 │   │   ├── index.mjs               入站闸门（准入→幂等→限频）
 │   │   ├── access.mjs              准入白名单
