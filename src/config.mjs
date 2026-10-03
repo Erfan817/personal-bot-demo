@@ -83,6 +83,16 @@ export const config = {
     maxAudioMb: Number(process.env.TRANSCRIBE_MAX_MB ?? 28),
   },
 
+  // ── 自建 App 网关（PWA 手机端）──
+  // token 是唯一的门：没配置就不启动网关。host 默认只听本机 ——
+  // 公网暴露（域名/Tailscale 等）是显式决定，不是默认行为。
+  appApi: {
+    token: process.env.APP_API_TOKEN ?? "",
+    port: Number(process.env.APP_API_PORT ?? 8787),
+    host: process.env.APP_API_HOST ?? "127.0.0.1",
+    chatId: process.env.APP_API_CHAT_ID ?? "app",
+  },
+
   // ── 成本闸门 ──
   // 会自己定时触发、还会联网的 agent，风险不是"看不见花了多少"，
   // 是没人拦着它花。按日累计 token（输入+输出），超限后定时任务停推。

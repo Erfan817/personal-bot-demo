@@ -41,6 +41,14 @@ if (config.channel === "feishu") {
   // 长驻模式下才需要调度层
   const { startScheduler } = await import("./scheduler/index.mjs");
   startScheduler();
+
+  // 自建 App 网关（可选）：配置了 APP_API_TOKEN 就随服务一起启动
+  if (config.appApi.token) {
+    const { startAppApi } = await import("./channels/api.mjs");
+    startAppApi().catch((e) => {
+      console.error(`❌ App 网关启动失败：${e.message}`);
+    });
+  }
 } else {
   const { startCli } = await import("./channels/cli.mjs");
   startCli().catch((e) => {
