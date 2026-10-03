@@ -16,7 +16,7 @@ import { isAllowed, isConfigured } from "./access.mjs";
 import { checkRate } from "./ratelimit.mjs";
 import { alreadySeen } from "./dedupe.mjs";
 
-export { shapeReply } from "./outbound.mjs";
+export { shapeReply, toPlainText } from "./outbound.mjs";
 export { isConfigured };
 
 /**
