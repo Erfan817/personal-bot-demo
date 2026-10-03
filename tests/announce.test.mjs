@@ -14,7 +14,7 @@ import { truncateForAnnounce, ANNOUNCE_RESULT_LIMIT } from "../src/brain/announc
 test("短结果原样通过，不做任何加工", () => {
   assert.equal(truncateForAnnounce("✅ 已创建提醒"), "✅ 已创建提醒");
   assert.equal(truncateForAnnounce(""), "");
-  assert.equal(truncateForAnnounce(null), "null");
+  assert.equal(truncateForAnnounce(null), "", "空值归一为空串");
 });
 
 test("长结果截断到上限，并标注总长度", () => {
