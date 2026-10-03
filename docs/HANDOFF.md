@@ -223,7 +223,7 @@ node ~/erifane-bot/scripts/restore.mjs --verify \
 
 ## 6. 密钥与访问权限
 
-### 6.1 服务器 `.env` 里实际存在的变量（只有这 5 个）
+### 6.1 服务器 `.env` 里实际存在的变量（只有这 6 个）
 
 ```
 DEEPSEEK_API_KEY
@@ -231,6 +231,7 @@ FEISHU_APP_ID
 FEISHU_APP_SECRET
 ALLOWED_USERS          # 逗号分隔的 open_id 白名单；留空 = 拒绝所有人
 SCHEDULE_CHAT_ID       # 定时推送目标
+MCP_SERVERS            # MCP 桥接配置（B站工具服务器，见 §8）
 ```
 
 **其余全部没设**，走 `.env.example` 里的默认值：
@@ -310,6 +311,7 @@ ssh lh 'cat ~/erifane-bot/.env'
 | 位置 | 问题 |
 |---|---|
 | `README.md` 部署示例 | 用 `ssh server` 占位，本机实际别名是 `lh` |
+| `~/mcp-servers/bilibili-mcp`（B站工具服务器，项目外独立部署，Python venv） | ① `requirements.txt` 写 `mcp>=1.0.0` 会装到 2.x，而它用 v1 的 FastMCP（已改名）→ **启动即崩**。已锁 `pip install "mcp<2"`，重装依赖后必须复查。② B站登录凭证在它的目录里：`bili_credential.json`（含 sessdata），**等同密钥对待**，勿提交勿外传。③ 桥接工具的白名单在 bot 的 `.env` `MCP_SERVERS` 第 4 段——加新工具先想清楚是不是读类 |
 
 > ✅ 2026-10-02 随迁移修复（commit `0f7bc7b`）：`scripts/healthcheck.sh` 的 `BASE`
 > 原是硬编码绝对路径 `/home/azureuser/erifane-bot`，现改为**从脚本自身位置推导**——
