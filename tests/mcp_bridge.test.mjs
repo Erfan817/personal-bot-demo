@@ -18,6 +18,11 @@ import {
 } from "@earendil-works/pi-mcp";
 import { createInMemoryTransportPair } from "@earendil-works/pi-mcp/testing";
 
+// 必须在 import 被测模块【之前】强制空配置 ——
+// 否则在服务器上跑时（.env 里配了真实 MCP_SERVERS），
+// loadMcpTools 会拉起真子进程：断言失败，且子进程句柄把测试吊死。
+process.env.MCP_SERVERS = "";
+
 const { wrapMcpClient, loadMcpTools } = await import("../src/tools/mcp.mjs");
 
 /** 起一个伪造的 MCP 服务器（注册 3 个工具，含怪字符名和写操作工具） */
