@@ -223,7 +223,7 @@ node ~/erifane-bot/scripts/restore.mjs --verify \
 
 ## 6. 密钥与访问权限
 
-### 6.1 服务器 `.env` 里实际存在的变量（只有这 6 个）
+### 6.1 服务器 `.env` 里实际存在的变量（只有这 7 个）
 
 ```
 DEEPSEEK_API_KEY
@@ -232,10 +232,11 @@ FEISHU_APP_SECRET
 ALLOWED_USERS          # 逗号分隔的 open_id 白名单；留空 = 拒绝所有人
 SCHEDULE_CHAT_ID       # 定时推送目标
 MCP_SERVERS            # MCP 桥接配置（B站工具服务器，见 §8）
+SILICONFLOW_API_KEY    # 视频转写（video_transcribe）：无字幕视频的音频转文字兜底
 ```
 
 **其余全部没设**，走 `.env.example` 里的默认值：
-`PROVIDER` · `MODEL` · `DB_PATH` · `RATE_*` · `HISTORY_LIMIT` · `BRAVE_API_KEY` · `HEARTBEAT_FILE` · `BACKUP_KEEP`
+`PROVIDER` · `MODEL` · `DB_PATH` · `RATE_*` · `HISTORY_LIMIT` · `BRAVE_API_KEY` · `HEARTBEAT_FILE` · `BACKUP_KEEP` · `TRANSCRIBE_*` · `AGENT_TIMEOUT_MS`（已设 300000，因转写链路 1-3 分钟）
 
 ### 6.2 什么需要「交接」，什么可以自己查
 
