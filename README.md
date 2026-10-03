@@ -125,6 +125,7 @@ CHANNEL=feishu node src/index.mjs
 | `@larksuiteoapi/node-sdk` | `^1.74.0` | 飞书长连接 |
 | `better-sqlite3` | `^13.0.3` | SQLite（含 FTS5 中文分词） |
 | `typebox` | `^1.3.34` | 工具参数 schema |
+| `@earendil-works/pi-mcp` | `^1.0.0` | MCP 客户端（桥接外部工具服务器，见「怎么扩展」） |
 
 | 能力 | 说明 | 谁实现的 |
 |---|---|---|
@@ -420,6 +421,7 @@ npm run check   # 对所有 .mjs 跑 node --check
 | `misfire.test.mjs` | 错过触发分钟的扫描 | 已处理过的分钟不算错过；只补最近一次 |
 | `memory.test.mjs` | 存取 / 索引同步 / 会话隔离 | **含"已知局限"的固化断言** |
 | `memory_card.test.mjs` | 记忆卡：去重更新 / 主题检索 / 删除同步 | **含与档案层"同义召不回"的正反对照断言** |
+| `mcp_bridge.test.mjs` | MCP 桥：allow 过滤 / 命名清洗 / 结果透传 | 用内存传输伪造 MCP 服务器，离线可跑 |
 
 **CI**：每次 push / PR，GitHub Actions 跑 `npm run check` + 全部测试
 （Node 22 和 24 两个版本，见 `.github/workflows/test.yml`）——
@@ -545,7 +547,7 @@ db.prepare("DELETE FROM memories_fts WHERE rowid = ?").run(id);
 | 运维 | systemd timer + journald + git 部署 |
 | 基础设施 | 腾讯云轻量 · Ubuntu 24.04 · 4 核 / 4 GiB（2026-10 自 Azure Korea Central 1 GiB 迁移） |
 
-**依赖总数：5 个。** 没有构建步骤、没有 Docker、没有数据库服务。
+**依赖总数：6 个。** 没有构建步骤、没有 Docker、没有数据库服务。
 
 ---
 
@@ -596,6 +598,7 @@ erifane-bot/
 │   │   ├── history_search.mjs      检索历史对话
 │   │   ├── remind_me.mjs           ★ 自建定时提醒（create/list/remove）
 │   │   ├── memory.mjs              ★ 长期记忆卡（add/list/search/remove）
+│   │   ├── mcp.mjs                 ★ MCP 桥（外部工具服务器 → 白名单）
 │   │   ├── web_search.mjs          搜索（DDG / Brave 双通道）
 │   │   ├── web_fetch.mjs           抓网页（带 SSRF 拦截）
 │   │   └── lib/                    ★ 纯函数（离线可单测）
@@ -634,6 +637,11 @@ erifane-bot/
 **加一个新渠道：也是新增一个文件。** 实现「收消息」（过闸门 → 入全局队列）和「发消息」
 （订阅事件，按 chatId 路由）两件事。事件自带会话标识，多渠道并存不会串话——
 QQ 渠道（OneBot 11）因此随时可以加。
+
+**接一整个外部工具服务器：`.env` 里加一行，代码零改动。**
+`MCP_SERVERS=名称|命令|参数|允许的工具` —— 通过 pi-mcp 桥（`src/tools/mcp.mjs`）
+把 MCP 生态的工具接进来；**allow 清单之外的工具根本不注册**（白名单外的能力物理上不存在），
+MCP 服务器起不来只降级不炸主服务。B站字幕（bilibili-mcp）就是这么接进来的。
 
 ---
 

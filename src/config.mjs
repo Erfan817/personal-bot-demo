@@ -89,4 +89,27 @@ export const config = {
     jobsFile:
       process.env.JOBS_FILE ?? join(PROJECT_ROOT, "data", "jobs.json"),
   },
+
+  // ── MCP 桥接 ──
+  // 外部 MCP 服务器以子进程（stdio）接入，工具经 allow 过滤后注册进工具层。
+  // 格式（分号分隔多个服务器，竖线分隔字段）：
+  //   MCP_SERVERS=名称|命令|参数(空格分隔)|允许的工具(逗号分隔，留空=全部)
+  // 只注册 allow 清单里的工具 —— 白名单外的能力物理上不存在。
+  mcp: {
+    servers: (process.env.MCP_SERVERS ?? "")
+      .split(";")
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .map((entry) => {
+        const [name = "mcp", command = "", argsRaw = "", allowRaw = ""] =
+          entry.split("|");
+        return {
+          name: name.trim(),
+          command: command.trim(),
+          args: argsRaw.trim().split(/\s+/).filter(Boolean),
+          allow: allowRaw.split(",").map((t) => t.trim()).filter(Boolean),
+        };
+      })
+      .filter((s) => s.command),
+  },
 };
