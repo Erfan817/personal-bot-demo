@@ -19,6 +19,7 @@ import { emit } from "../events.mjs";
 import { models, resolveModel } from "./models.mjs";
 import { agentTools, isAllowed } from "../tools/index.mjs";
 import { loadRecent, saveMessage, coreMemories } from "../memory/index.mjs";
+import { truncateForAnnounce } from "./announce.mjs";
 import { recordRun } from "./usage.mjs";
 
 /**
@@ -94,9 +95,10 @@ export async function runAgent(
             chatId,
             name: info.name,
             args: info.args,
-            result:
-              extractText(event.result) ||
-              (event.isError ? "（执行出错）" : ""),
+            // 过程通知给人看：截断长结果（模型走的框架消息不受影响）
+            result: truncateForAnnounce(
+              extractText(event.result) || (event.isError ? "（执行出错）" : ""),
+            ),
           });
         }
         break;
