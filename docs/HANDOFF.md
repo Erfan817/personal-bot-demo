@@ -311,7 +311,7 @@ ssh lh 'cat ~/erifane-bot/.env'
 | 位置 | 问题 |
 |---|---|
 | `README.md` 部署示例 | 用 `ssh server` 占位，本机实际别名是 `lh` |
-| `~/mcp-servers/bilibili-mcp`（B站工具服务器，项目外独立部署，Python venv） | ① `requirements.txt` 写 `mcp>=1.0.0` 会装到 2.x，而它用 v1 的 FastMCP（已改名）→ **启动即崩**。已锁 `pip install "mcp<2"`，重装依赖后必须复查。② B站登录凭证在它的目录里：`bili_credential.json`（含 sessdata），**等同密钥对待**，勿提交勿外传。③ 桥接工具的白名单在 bot 的 `.env` `MCP_SERVERS` 第 4 段——加新工具先想清楚是不是读类 |
+| `~/mcp-servers/bilibili-mcp`（B站工具服务器，项目外独立部署，Python venv） | ① `requirements.txt` 写 `mcp>=1.0.0` 会装到 2.x，而它用 v1 的 FastMCP（已改名）→ **启动即崩**。已锁 `pip install "mcp<2"`，重装依赖后必须复查。② B站登录凭证在它的目录里：`bili_credential.json`（含 sessdata），**等同密钥对待**，勿提交勿外传。③ 桥接工具的白名单在 bot 的 `.env` `MCP_SERVERS` 第 4 段——加新工具先想清楚是不是读类。④ **凭证过期**（字幕工具报未登录/风控）→ 跑仓库里 `scripts/bili-qr-login.py`（在 bilibili-mcp 目录下执行，扫码后重写 `bili_credential.json`）。注意：这个脚本用的是**直连官方接口**的三步流，因为 bilibili-api 库的登录封装解析不到新版 cookie（B站已把 cookie 挪到响应头的 Set-Cookie 里），且其 DONE 分支会把空凭证当成功。⑤ 桥接层测试 `tests/mcp_bridge.test.mjs` 用 pi-mcp 的内存传输伪造 MCP 服务器——伪造端也要 `start()`（send 要求两端都已 start，否则报 "peer is not connected"） |
 
 > ✅ 2026-10-02 随迁移修复（commit `0f7bc7b`）：`scripts/healthcheck.sh` 的 `BASE`
 > 原是硬编码绝对路径 `/home/azureuser/erifane-bot`，现改为**从脚本自身位置推导**——
